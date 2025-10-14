@@ -2,7 +2,6 @@ import asyncio
 import contextlib
 import time
 from io import BytesIO
-from typing import Any, cast
 
 import discord
 from discord.ext import commands
@@ -45,6 +44,11 @@ class QRCog(BaseCog):
                 # Try to respond anyway (will likely fail but worth attempting)
                 with contextlib.suppress(Exception):
                     await ctx.respond("Request timed out. Please try again.", ephemeral=True)
+                with contextlib.suppress(Exception):
+                    await ctx.user.send(
+                        "Your slash command request expired before the bot could respond. "
+                        "Please try again. If this keeps happening, reload Discord (Ctrl+R)."
+                    )
                 return
             except Exception as e:
                 log.exception("Failed to defer interaction: %s", e)
@@ -77,11 +81,11 @@ class QRCog(BaseCog):
                 )
             else:
                 # Test doubles may expose a simpler API: generate_qr(url)
-                svc_any = cast(Any, self.qr_service)
-                result = await asyncio.to_thread(
-                    svc_any.generate_qr,
-                    opts.url,
-                )
+                gen = getattr(self.qr_service, "generate_qr", None)
+                if callable(gen):
+                    result = await asyncio.to_thread(gen, opts.url)
+                else:
+                    raise RuntimeError("QR service missing generate method")
 
         except UserInputError as e:
             await self.handle_user_error(ctx, log, str(e))
@@ -97,6 +101,7 @@ class QRCog(BaseCog):
         # Regular text above the image, with a single blank line before.
         # Use a zero-width space before the newline to preserve the blank line in Discord.
         content = f"\u200b\n🌐 <{result.url}>\n"
+        content = f"QR for <{result.url}>"
         await ctx.respond(content=content, file=file, ephemeral=not self.config.QR_PUBLIC_RESPONSES)
         log.info("QR code sent successfully for url=%s", result.url[:50])
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from discord.ext import commands
 
@@ -33,6 +33,12 @@ class BaseCog(commands.Cog):
         message: str,
     ) -> None:
         log.debug("User error: %s", message)
+        # Use follow-up if we've already acknowledged (deferred/responded)
+        fu = getattr(ctx, "followup", None)
+        if getattr(ctx, "responded", False) and isinstance(fu, _FollowupLike):
+            with contextlib.suppress(Exception):
+                await fu.send(message, ephemeral=True)
+            return
         await ctx.respond(message, ephemeral=True)
 
     async def handle_exception(
@@ -42,5 +48,16 @@ class BaseCog(commands.Cog):
         exc: Exception,
     ) -> None:
         log.exception("Unhandled exception: %s", exc)
+        # Prefer follow-up after a prior defer; otherwise initial respond
+        fu = getattr(ctx, "followup", None)
+        if getattr(ctx, "responded", False) and isinstance(fu, _FollowupLike):
+            with contextlib.suppress(Exception):
+                await fu.send("An error occurred. Please try again later.", ephemeral=True)
+            return
         with contextlib.suppress(Exception):
             await ctx.respond("An error occurred. Please try again later.", ephemeral=True)
+
+
+@runtime_checkable
+class _FollowupLike(Protocol):
+    async def send(self, *args: Any, **kwargs: Any) -> Any: ...

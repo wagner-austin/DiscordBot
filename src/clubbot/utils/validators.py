@@ -53,7 +53,8 @@ def _normalize_url(url: str, default_scheme: str = "https") -> str:
         or (host_l.startswith("[") and host_l.endswith("]"))  # IPv6 literal
     )
     if not valid_host:
-        raise UserInputError("Please provide a valid host (e.g., example.com)")
+        # Friendlier guidance for malformed hostnames
+        raise UserInputError("Please check the URL and try again.")
 
     # Recompose the normalized URL (ensures scheme present)
     return _url.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))

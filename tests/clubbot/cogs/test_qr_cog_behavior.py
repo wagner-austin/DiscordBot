@@ -80,7 +80,13 @@ async def test_qrcode_invalid_url_returns_user_message():
 
     assert ctx.calls, "Expected a respond call"
     last = ctx.calls[-1]
-    assert "Invalid URL" in (last["message"] or "") or "Please provide" in (last["message"] or "")
+    msg = str(last["message"]) or ""
+    # Accept legacy and friendlier validation messages
+    assert (
+        ("Invalid URL" in msg)
+        or ("Please provide" in msg)
+        or ("Please check the URL and try again." in msg)
+    )
     assert last["ephemeral"] is True
 
 

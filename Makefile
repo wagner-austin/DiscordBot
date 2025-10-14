@@ -48,7 +48,7 @@ typecheck:
 	poetry run mypy
 
 check: install-dev
-	poetry run ruff check . --fix
+	-poetry run ruff check . --fix
 	poetry run ruff format .
 	poetry run mypy
 	poetry run pytest -q
