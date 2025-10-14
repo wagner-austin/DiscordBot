@@ -28,7 +28,9 @@ def make_cfg(guild_ids=None) -> Config:
 @pytest.mark.asyncio
 async def test_on_ready_triggers_sync_commands():
     cfg = make_cfg([])
-    container = ServiceContainer(cfg=cfg, qr_service=QRService(cfg))
+    from src.clubbot.services.metrics import NullMetricsService
+
+    container = ServiceContainer(cfg=cfg, qr_service=QRService(cfg), metrics=NullMetricsService())
     orch = BotOrchestrator(container)
     bot = orch.build_bot()
     container.wire_bot(bot)
@@ -51,7 +53,9 @@ async def test_on_ready_triggers_sync_commands():
 @pytest.mark.asyncio
 async def test_sync_commands_only_targets_present_guilds():
     cfg = make_cfg([101, 202])
-    container = ServiceContainer(cfg=cfg, qr_service=QRService(cfg))
+    from src.clubbot.services.metrics import NullMetricsService
+
+    container = ServiceContainer(cfg=cfg, qr_service=QRService(cfg), metrics=NullMetricsService())
     orch = BotOrchestrator(container)
     bot = orch.build_bot()
 
@@ -74,7 +78,9 @@ async def test_sync_commands_only_targets_present_guilds():
 @pytest.mark.asyncio
 async def test_on_guild_join_syncs_only_for_targeted_guilds():
     cfg = make_cfg([555])
-    container = ServiceContainer(cfg=cfg, qr_service=QRService(cfg))
+    from src.clubbot.services.metrics import NullMetricsService
+
+    container = ServiceContainer(cfg=cfg, qr_service=QRService(cfg), metrics=NullMetricsService())
     orch = BotOrchestrator(container)
     bot = orch.build_bot()
     orch.register_listeners()

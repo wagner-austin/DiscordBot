@@ -59,6 +59,20 @@ src/clubbot/
 - Commands are registered to the guild in `DISCORD_GUILD_ID` for fast iteration. Remove guild scoping to promote to global commands later.
 - During verification, commands are synced only to target guilds (`DISCORD_GUILD_ID`/`DISCORD_GUILD_IDS`). There is no global fallback. Add the bot to the target guild(s) to see commands.
 
+## Metrics
+- Backend: SQLite (default `data/metrics.sqlite`)
+- Logs both successes and failures (validation, rate-limit, internal errors)
+- Stats command: `/qrstats` (Officers role only). No parameters — uses defaults.
+- Default window comes from `QR_STATS_DEFAULT_WINDOW` and shows top 10 links.
+- Environment:
+  - `METRICS_ENABLED` (default `true`)
+  - `METRICS_SQLITE_PATH` (default `data/metrics.sqlite`)
+  - `METRICS_REDACT_QUERY` (default `true`) — removes query string from stored normalized URLs
+  - `QR_STATS_OFFICER_ROLE` (default `officers`)
+  - `QR_STATS_DEFAULT_WINDOW` (default `7d`)
+  - `QR_STATS_ADMIN_USER_IDS` (comma/space separated user IDs; allowed to use `/qrstats` in DMs)
+  - `COMMANDS_SYNC_GLOBAL` (default `false`; when `true` also syncs commands globally so they are available in DMs — propagation may take up to 1 hour)
+
 ## Environment
 - Required
   - `DISCORD_TOKEN`

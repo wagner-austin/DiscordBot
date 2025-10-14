@@ -13,8 +13,14 @@ def main() -> None:
         print("Set DISCORD_APPLICATION_ID in your environment to generate an invite URL.")
         raise SystemExit(1)
 
-    url = f"https://discord.com/api/oauth2/authorize?client_id={app_id}&permissions={perms}&scope={scopes}"
-    print(url)
+    guild_install = f"https://discord.com/api/oauth2/authorize?client_id={app_id}&permissions={perms}&scope={scopes}"
+    user_install = (
+        f"https://discord.com/oauth2/authorize?client_id={app_id}&scope=applications.commands"
+    )
+    print("Guild Install (bot + commands):")
+    print(guild_install)
+    print("\nUser Install (commands in DMs):")
+    print(user_install)
 
 
 if __name__ == "__main__":

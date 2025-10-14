@@ -26,6 +26,9 @@ class BotOrchestrator:
         self.container = container
         self.bot: commands.Bot | None = None
         self.logger = logging.getLogger(__name__)
+        # Sync bookkeeping to avoid hammering the commands endpoints on reconnects
+        self._has_synced_once: bool = False
+        self._last_present_ids: set[int] = set()
 
     def build_bot(self) -> commands.Bot:
         intents = discord.Intents.default()
@@ -53,16 +56,38 @@ class BotOrchestrator:
                     )
 
                 if present_ids:
+                    # Skip if already synced these guilds in this process
+                    current = set(present_ids)
+                    if self._has_synced_once and current == self._last_present_ids:
+                        logger.info("Command sync up-to-date; skipping per-guild sync")
+                        return
                     await self.bot.sync_commands(guild_ids=present_ids)
                     logger.info("Synced commands to guilds %s", present_ids)
+                    try:
+                        names = sorted({c.name for c in (self.bot.application_commands or [])})
+                        logger.info(
+                            "Registered commands (per-guild, unique %s): %s",
+                            len(names),
+                            names,
+                        )
+                    except Exception as e:
+                        logger.debug("Could not list application commands: %s", e)
+                    self._last_present_ids = current
+                    self._has_synced_once = True
                 else:
-                    logger.info(
-                        "No present target guilds; skipping command sync " "(no global fallback)"
-                    )
+                    logger.info("No present target guilds; skipping per-guild sync")
             else:
-                logger.info(
-                    "No target guilds configured; skipping command sync " "(no global fallback)"
-                )
+                logger.info("No target guilds configured")
+
+            # Optionally perform global sync for DM usage (propagation can take a while).
+            if cfg.COMMANDS_SYNC_GLOBAL:
+                await self.bot.sync_commands()
+                logger.info("Synced commands globally for DM availability")
+                try:
+                    names = sorted({c.name for c in (self.bot.application_commands or [])})
+                    logger.info("Registered commands (global, unique %s): %s", len(names), names)
+                except Exception as e:
+                    logger.debug("Could not list global application commands: %s", e)
         except discord.Forbidden as e:
             logger.error(
                 (
@@ -88,6 +113,12 @@ class BotOrchestrator:
                 self.bot.user and self.bot.user.id,
             )
             await self.sync_commands()
+
+        async def on_connect() -> None:
+            logging.getLogger(__name__).info("Gateway connected")
+
+        async def on_resumed() -> None:
+            logging.getLogger(__name__).info("Gateway resumed session")
 
         async def on_guild_join(guild: discord.Guild) -> None:
             logger = logging.getLogger(__name__)
@@ -119,6 +150,8 @@ class BotOrchestrator:
 
         # Register listeners (no decorators to keep type-checkers happy)
         self.bot.add_listener(on_ready)
+        self.bot.add_listener(on_connect)
+        self.bot.add_listener(on_resumed)
         self.bot.add_listener(on_guild_join)
         self.bot.add_listener(on_application_command_error)
 

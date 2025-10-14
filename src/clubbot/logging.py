@@ -22,11 +22,13 @@ class RequestIdFilter(logging.Filter):
 
 
 def setup_logging(level: str = "INFO") -> None:
+    # Use force=True to ensure our config applies even if another library configured logging first.
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format="[%(asctime)s] [%(levelname)s] [%(name)s] [req=%(request_id)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stdout,
+        force=True,
     )
     # Add request-id filter to all handlers
     root = logging.getLogger()
@@ -36,3 +38,4 @@ def setup_logging(level: str = "INFO") -> None:
     logging.getLogger("discord").setLevel(logging.WARNING)
     logging.getLogger("discord.gateway").setLevel(logging.WARNING)
     logging.getLogger("discord.client").setLevel(logging.WARNING)
+    logging.getLogger(__name__).debug("Logging configured at level %s", level.upper())

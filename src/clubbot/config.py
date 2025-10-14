@@ -24,6 +24,8 @@ class Config:
     METRICS_REDACT_QUERY: bool = True
     QR_STATS_OFFICER_ROLE: str = "officers"
     QR_STATS_DEFAULT_WINDOW: str = "7d"
+    QR_STATS_ADMIN_USER_IDS: list[int] = None  # type: ignore[assignment]
+    COMMANDS_SYNC_GLOBAL: bool = False
 
 
 def load_config() -> Config:
@@ -70,6 +72,13 @@ def load_config() -> Config:
         in {"1", "true", "yes", "y", "on"},
         QR_STATS_OFFICER_ROLE=os.getenv("QR_STATS_OFFICER_ROLE", "officers"),
         QR_STATS_DEFAULT_WINDOW=os.getenv("QR_STATS_DEFAULT_WINDOW", "7d"),
+        QR_STATS_ADMIN_USER_IDS=[
+            int(x)
+            for x in re.split(r"[\s,]+", os.getenv("QR_STATS_ADMIN_USER_IDS", "").strip())
+            if x.isdigit()
+        ],
+        COMMANDS_SYNC_GLOBAL=os.getenv("COMMANDS_SYNC_GLOBAL", "false").strip().lower()
+        in {"1", "true", "yes", "y", "on"},
     )
 
 
