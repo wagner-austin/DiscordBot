@@ -30,11 +30,15 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
 5. Test `/qrcode` in your server.
 
 ## Deployment (Railway)
-- Create a new project from this repo
-- Set Environment Variables:
+- Create a new project from this repo.
+- In the service settings, set Deployment Method to Dockerfile (this repo includes a Dockerfile).
+- Environment Variables (Project → Variables):
   - `DISCORD_TOKEN`, `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS`
-  - Optional QR defaults (see Environment)
-- Start command: `poetry run python -m clubbot.main`
+  - Optional QR defaults (see Environment below)
+  - Optional `LOG_LEVEL` (e.g., `INFO` or `DEBUG`)
+  - Optional `COMMANDS_SYNC_GLOBAL` (`true`/`false`)
+- No Start Command needed; Docker CMD runs `python -m clubbot.main` inside the Poetry environment.
+- Enable auto‑deploy on push.
 
 ## Project Layout
 ```
