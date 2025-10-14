@@ -20,6 +20,5 @@ COPY src /app/src
 COPY scripts /app/scripts
 RUN poetry install --no-interaction --no-ansi
 
-# Default command runs the bot
-CMD ["python", "-m", "clubbot.main"]
-
+# Default command runs the bot (importing directly from src/)
+CMD ["python", "-m", "src.clubbot.main"]
