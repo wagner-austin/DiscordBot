@@ -1,0 +1,74 @@
+[tool.poetry]
+name = "discord-club-bot"
+version = "0.1.0"
+description = "Discord bot LVP with QR code generation via slash commands"
+authors = ["Your Team <team@example.com>"]
+readme = "README.md"
+packages = [{ include = "clubbot", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+py-cord = "^2.6.1"
+qrcode = {extras = ["pil"], version = "^7.4.2"}
+Pillow = "^10.1.0"
+python-dotenv = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pytest-asyncio = "^0.21.1"
+ruff = "^0.6.4"
+mypy = "^1.11.2"
+types-Pillow = "^10.2.0.20240822"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# Ruff configuration (linter + formatter)
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+exclude = [".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # bugbear
+    "UP", # pyupgrade
+    "N",  # pep8-naming
+    "C4", # flake8-comprehensions
+    "SIM",# flake8-simplify
+    "RET",# flake8-return
+    "C90",# mccabe complexity
+    "RUF",# Ruff-specific rules
+]
+ignore = []
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/invite.py" = ["T201"]  # allow print in CLI utility
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+disallow_subclassing_any = true
+disallow_any_generics = true
+no_implicit_optional = true
+check_untyped_defs = true
+no_implicit_reexport = true
+show_error_codes = true
+pretty = true
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = [
+  "discord.*",
+  "qrcode.*",
+]
+ignore_missing_imports = true
