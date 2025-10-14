@@ -51,18 +51,34 @@ def load_config() -> Config:
                 single_guild,
             )
 
+    # Helper readers that treat empty values as unset
+    def _s(name: str, default: str, upper: bool = False) -> str:
+        val = os.getenv(name)
+        if val is None or val.strip() == "":
+            val = default
+        return val.upper() if upper else val
+
+    def _i(name: str, default: int) -> int:
+        raw = os.getenv(name)
+        if raw is None or raw.strip() == "":
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            return default
+
     return Config(
-        DISCORD_TOKEN=os.getenv("DISCORD_TOKEN", ""),
+        DISCORD_TOKEN=_s("DISCORD_TOKEN", ""),
         DISCORD_GUILD_ID=single_guild,
         DISCORD_GUILD_IDS=guild_ids,
-        LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO").upper(),
-        QRCODE_RATE_LIMIT=int(os.getenv("QRCODE_RATE_LIMIT", "1")),
-        QRCODE_RATE_WINDOW_SECONDS=int(os.getenv("QRCODE_RATE_WINDOW_SECONDS", "1")),
-        QR_DEFAULT_ERROR_CORRECTION=os.getenv("QR_DEFAULT_ERROR_CORRECTION", "M").upper(),
-        QR_DEFAULT_BOX_SIZE=int(os.getenv("QR_DEFAULT_BOX_SIZE", "10")),
-        QR_DEFAULT_BORDER=int(os.getenv("QR_DEFAULT_BORDER", "1")),
-        QR_DEFAULT_FILL_COLOR=os.getenv("QR_DEFAULT_FILL_COLOR", "#000000"),
-        QR_DEFAULT_BACK_COLOR=os.getenv("QR_DEFAULT_BACK_COLOR", "#FFFFFF"),
+        LOG_LEVEL=_s("LOG_LEVEL", "INFO", upper=True),
+        QRCODE_RATE_LIMIT=_i("QRCODE_RATE_LIMIT", 1),
+        QRCODE_RATE_WINDOW_SECONDS=_i("QRCODE_RATE_WINDOW_SECONDS", 1),
+        QR_DEFAULT_ERROR_CORRECTION=_s("QR_DEFAULT_ERROR_CORRECTION", "M", upper=True),
+        QR_DEFAULT_BOX_SIZE=_i("QR_DEFAULT_BOX_SIZE", 10),
+        QR_DEFAULT_BORDER=_i("QR_DEFAULT_BORDER", 1),
+        QR_DEFAULT_FILL_COLOR=_s("QR_DEFAULT_FILL_COLOR", "#000000"),
+        QR_DEFAULT_BACK_COLOR=_s("QR_DEFAULT_BACK_COLOR", "#FFFFFF"),
         QR_PUBLIC_RESPONSES=os.getenv("QR_PUBLIC_RESPONSES", "true").strip().lower()
         in {"1", "true", "yes", "y", "on"},
         METRICS_ENABLED=os.getenv("METRICS_ENABLED", "true").strip().lower()
