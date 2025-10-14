@@ -11,6 +11,9 @@ from src.clubbot.utils.validators import (
 
 def test_validate_url_ok():
     assert validate_url("https://example.com") == "https://example.com"
+    # Adds https:// for bare hostnames
+    assert validate_url("example.com") == "https://example.com"
+    assert validate_url("www.example.org/path?q=1") == "https://www.example.org/path?q=1"
 
 
 def test_validate_url_bad():
@@ -18,8 +21,6 @@ def test_validate_url_bad():
         validate_url("")
     with pytest.raises(UserInputError):
         validate_url("not a url with spaces")
-    with pytest.raises(UserInputError):
-        validate_url("example.com")
 
 
 def test_validate_color_hex():

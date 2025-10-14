@@ -7,6 +7,7 @@ from discord.ext import commands
 from ..config import Config, load_config
 from ..logging import set_request_id
 from ..services.qr_app import QRService
+from ..services.qr_logic import build_effective_qr_options
 from ..utils.discord_typing import slash_cmd
 from ..utils.errors import UserInputError
 from ..utils.rate_limiter import RateLimiter
@@ -18,7 +19,7 @@ class QRCog(BaseCog):
         super().__init__()
         self.bot = bot
         self.config = config
-        self.rate_limiter = RateLimiter(config.QRCODE_RATE_LIMIT)
+        self.rate_limiter = RateLimiter(config.QRCODE_RATE_LIMIT, config.QRCODE_RATE_WINDOW_SECONDS)
         self.qr_service = qr_service
 
     @slash_cmd(description="Create a QR code from a URL")
@@ -32,19 +33,22 @@ class QRCog(BaseCog):
         set_request_id(req_id)
         log = self.request_logger(req_id)
 
-        # Rate limit
-        allowed, wait_seconds = self.rate_limiter.allow(ctx.user.id, "qrcode")
-        if not allowed:
-            await ctx.respond(
-                f"Please wait {int(wait_seconds)} seconds before generating another QR code",
-                ephemeral=True,
-            )
-            log.info("Rate limited user=%s", ctx.user.id)
-            return
-
         try:
+            # Validate and normalize first (ensures clear user errors before rate-limiting)
+            _ = build_effective_qr_options(url, self.config)
+
             # Generate image using injected service
-            png_bytes = self.qr_service.generate_qr(url)
+            result = self.qr_service.generate_qr(url)
+
+            # Rate limit after successful validation and generation to prioritize clear errors
+            allowed, wait_seconds = self.rate_limiter.allow(ctx.user.id, "qrcode")
+            if not allowed:
+                await ctx.respond(
+                    f"Please wait {int(wait_seconds)} seconds before generating another QR code",
+                    ephemeral=True,
+                )
+                log.info("Rate limited user=%s", ctx.user.id)
+                return
 
         except UserInputError as e:
             await self.handle_user_error(ctx, log, str(e))
@@ -56,8 +60,9 @@ class QRCog(BaseCog):
         # Build filename qrcode_{timestamp}.png
         ts = int(time.time())
         filename = f"qrcode_{ts}.png"
-        file = discord.File(fp=BytesIO(png_bytes), filename=filename)
-        await ctx.respond(file=file, ephemeral=True)
+        file = discord.File(fp=BytesIO(result.image_png), filename=filename)
+        content = f"Destination: <{result.url}>"
+        await ctx.respond(content=content, file=file, ephemeral=True)
 
 
 def setup(bot: commands.Bot) -> None:

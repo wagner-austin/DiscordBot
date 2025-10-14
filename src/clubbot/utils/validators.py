@@ -1,19 +1,66 @@
 import re
+import urllib.parse as _url
 
 from PIL import ImageColor
 
 from .errors import UserInputError
 
 HEX_COLOR_PATTERN = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
-URL_PATTERN = re.compile(r"^https?://", re.IGNORECASE)
+DOMAIN_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+DOMAIN_RE = re.compile(rf"^(?:{DOMAIN_LABEL}\.)+[A-Za-z]{{2,63}}$")
+IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
+def _normalize_url(url: str, default_scheme: str = "https") -> str:
+    """Return a validated, normalized URL, adding a scheme when missing.
+
+    Accepts inputs like "example.com", "www.example.com/path", or full
+    "https://example.com". Only http/https are allowed. Raises UserInputError
+    for invalid or overlong values.
+    """
+    raw = url.strip()
+    if not raw:
+        raise UserInputError("Please provide a URL")
+    if len(raw) > 2000:
+        raise UserInputError("URL is too long (max 2000 characters)")
+
+    candidate = raw if "://" in raw else f"{default_scheme}://{raw}"
+    try:
+        parsed = _url.urlsplit(candidate)
+    except Exception as _:
+        raise UserInputError("Invalid URL format") from None
+
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise UserInputError("URL scheme must be http or https")
+
+    netloc = parsed.netloc
+    # Handle inputs like "example.com:8080"
+    host = netloc
+    if host.startswith("[") and "]" in host:
+        # IPv6 like [::1] or [2001:db8::1]:port
+        host = host.split("]", 1)[0] + "]"
+    elif ":" in host:
+        host = host.split(":", 1)[0]
+
+    host_l = host.lower().strip(".")
+    if not host_l:
+        raise UserInputError("URL host is required (e.g., example.com)")
+
+    valid_host = (
+        host_l == "localhost"
+        or DOMAIN_RE.match(host_l) is not None
+        or IPV4_RE.match(host_l) is not None
+        or (host_l.startswith("[") and host_l.endswith("]"))  # IPv6 literal
+    )
+    if not valid_host:
+        raise UserInputError("Please provide a valid host (e.g., example.com)")
+
+    # Recompose the normalized URL (ensures scheme present)
+    return _url.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
 
 
 def validate_url(url: str) -> str:
-    if not URL_PATTERN.match(url):
-        raise UserInputError("Please provide a valid URL starting with http:// or https://")
-    if len(url) > 2000:
-        raise UserInputError("URL is too long (max 2000 characters)")
-    return url
+    return _normalize_url(url)
 
 
 def validate_color(color: str | None, default: str) -> str:

@@ -8,6 +8,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
 - Brandable defaults via env vars
 - Input validation and friendly errors
   - URL normalization: accepts bare domains and adds `https://` automatically
+  - Response includes a clickable hyperlink to the destination URL for confirmation
 - Modular structure (cogs, services, utils)
 
 ## Prerequisites

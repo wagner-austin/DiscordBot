@@ -11,6 +11,7 @@ class Config:
     DISCORD_GUILD_IDS: list[int]
     LOG_LEVEL: str
     QRCODE_RATE_LIMIT: int
+    QRCODE_RATE_WINDOW_SECONDS: int
     QR_DEFAULT_ERROR_CORRECTION: str
     QR_DEFAULT_BOX_SIZE: int
     QR_DEFAULT_BORDER: int
@@ -46,7 +47,8 @@ def load_config() -> Config:
         DISCORD_GUILD_ID=single_guild,
         DISCORD_GUILD_IDS=guild_ids,
         LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO").upper(),
-        QRCODE_RATE_LIMIT=int(os.getenv("QRCODE_RATE_LIMIT", "5")),
+        QRCODE_RATE_LIMIT=int(os.getenv("QRCODE_RATE_LIMIT", "1")),
+        QRCODE_RATE_WINDOW_SECONDS=int(os.getenv("QRCODE_RATE_WINDOW_SECONDS", "1")),
         QR_DEFAULT_ERROR_CORRECTION=os.getenv("QR_DEFAULT_ERROR_CORRECTION", "M").upper(),
         QR_DEFAULT_BOX_SIZE=int(os.getenv("QR_DEFAULT_BOX_SIZE", "10")),
         QR_DEFAULT_BORDER=int(os.getenv("QR_DEFAULT_BORDER", "2")),

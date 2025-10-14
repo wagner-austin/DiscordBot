@@ -9,6 +9,12 @@ from .qr_service import generate_qr_png
 
 
 @dataclass(frozen=True)
+class QRResult:
+    image_png: bytes
+    url: str
+
+
+@dataclass(frozen=True)
 class QRService:
     cfg: Config
     _logger: logging.Logger = field(init=False, repr=False)
@@ -16,7 +22,7 @@ class QRService:
     def __post_init__(self) -> None:
         object.__setattr__(self, "_logger", logging.getLogger(__name__))
 
-    def generate_qr(self, url: str) -> bytes:
+    def generate_qr(self, url: str) -> QRResult:
         opts = build_effective_qr_options(url, self.cfg)
         self._logger.debug(
             "QRService generating image: ecc=%s box=%s border=%s fill=%s back=%s",
@@ -26,7 +32,7 @@ class QRService:
             opts.fill_color,
             opts.back_color,
         )
-        return generate_qr_png(
+        png = generate_qr_png(
             url=opts.url,
             ecc=opts.ecc,
             box_size=opts.box_size,
@@ -34,3 +40,4 @@ class QRService:
             fill_color=opts.fill_color,
             back_color=opts.back_color,
         )
+        return QRResult(image_png=png, url=opts.url)
