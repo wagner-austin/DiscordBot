@@ -34,7 +34,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
 - Set Environment Variables:
   - `DISCORD_TOKEN`, `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS`
   - Optional QR defaults (see Environment)
-- Start command: `python -m clubbot.main`
+- Start command: `poetry run python -m clubbot.main`
 
 ## Project Layout
 ```

@@ -1,1 +1,1 @@
-start: python -m clubbot.main
+start: poetry run python -m clubbot.main
