@@ -39,17 +39,10 @@ class ServiceContainer:
         """Attach all cogs to the bot (idempotent)."""
         # Import locally to avoid import cycles at module import time
         from .cogs.qr import QRCog
-        from .cogs.qr_stats import QRStatsCog
-        from .cogs.support import SupportCog
 
         logger = logging.getLogger(__name__)
 
         if bot.get_cog("QRCog") is None:
-            bot.add_cog(QRCog(bot, self.cfg, self.qr_service, self.metrics))
+            # Keep metrics available for future internal use; only QRCog is exposed.
+            bot.add_cog(QRCog(bot, self.cfg, self.qr_service))
             logger.info("Loaded cog: QRCog")
-        if bot.get_cog("QRStatsCog") is None:
-            bot.add_cog(QRStatsCog(bot, self.cfg, self.metrics))
-            logger.info("Loaded cog: QRStatsCog")
-        if bot.get_cog("SupportCog") is None:
-            bot.add_cog(SupportCog(bot, self.cfg))
-            logger.info("Loaded cog: SupportCog (/install)")

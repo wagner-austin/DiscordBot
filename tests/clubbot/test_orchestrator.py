@@ -1,4 +1,5 @@
 import asyncio
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -27,6 +28,8 @@ def make_cfg(guild_ids=None) -> Config:
 
 @pytest.mark.asyncio
 async def test_on_ready_triggers_sync_commands():
+    # Ensure startup sync is enabled for this test environment
+    os.environ["COMMANDS_SYNC_ON_START"] = "true"
     cfg = make_cfg([])
     from src.clubbot.services.metrics import NullMetricsService
 

@@ -32,7 +32,16 @@ class BotOrchestrator:
 
     def build_bot(self) -> commands.Bot:
         intents = discord.Intents.default()
-        bot = commands.Bot(intents=intents)
+        # Disable auto sync; we manage command sync manually per guild
+        # to avoid duplicate syncs and rate-limit churn on startup.
+        bot = commands.Bot(intents=intents, auto_sync_commands=False)
+        # Belt-and-suspenders: ensure the runtime flag is off and log it.
+        with contextlib.suppress(Exception):
+            bot.auto_sync_commands = False
+        logging.getLogger(__name__).info(
+            "auto_sync_commands=%s (expected False)",
+            getattr(bot, "auto_sync_commands", None),
+        )
         self.bot = bot
         return bot
 
@@ -79,15 +88,7 @@ class BotOrchestrator:
             else:
                 logger.info("No target guilds configured")
 
-            # Optionally perform global sync for DM usage (propagation can take a while).
-            if cfg.COMMANDS_SYNC_GLOBAL:
-                await self.bot.sync_commands()
-                logger.info("Synced commands globally for DM availability")
-                try:
-                    names = sorted({c.name for c in (self.bot.application_commands or [])})
-                    logger.info("Registered commands (global, unique %s): %s", len(names), names)
-                except Exception as e:
-                    logger.debug("Could not list global application commands: %s", e)
+            # Global sync disabled per simplification; commands are scoped to target guilds only.
         except discord.Forbidden as e:
             logger.error(
                 (
@@ -112,7 +113,18 @@ class BotOrchestrator:
                 self.bot.user,
                 self.bot.user and self.bot.user.id,
             )
-            await self.sync_commands()
+            # Optionally perform startup sync if explicitly enabled.
+            do_sync = os.getenv("COMMANDS_SYNC_ON_START", "false").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            }
+            if do_sync:
+                await self.sync_commands()
+            else:
+                logger.info("Startup command sync disabled; using existing registrations")
 
         async def on_connect() -> None:
             logging.getLogger(__name__).info("Gateway connected")

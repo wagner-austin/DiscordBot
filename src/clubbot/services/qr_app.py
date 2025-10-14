@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 
 from ..config import Config
-from .qr_logic import build_effective_qr_options
+from .qr_logic import QROptions, build_effective_qr_options
 from .qr_service import generate_qr_png
 
 
@@ -24,6 +24,9 @@ class QRService:
 
     def generate_qr(self, url: str) -> QRResult:
         opts = build_effective_qr_options(url, self.cfg)
+        return self.generate_qr_with_options(opts)
+
+    def generate_qr_with_options(self, opts: QROptions) -> QRResult:
         self._logger.debug(
             "QRService generating image: ecc=%s box=%s border=%s fill=%s back=%s",
             opts.ecc,

@@ -28,44 +28,47 @@ class Config:
     COMMANDS_SYNC_GLOBAL: bool = False
 
 
-def load_config() -> Config:
+def _parse_guilds() -> tuple[str | None, list[int]]:
     logger = logging.getLogger(__name__)
-    single_guild = os.getenv("DISCORD_GUILD_ID")
-    multi_env = os.getenv("DISCORD_GUILD_IDS", "").strip()
-
-    guild_ids: list[int] = []
-    if multi_env:
-        for part in re.split(r"[\s,]+", multi_env):
+    single = os.getenv("DISCORD_GUILD_ID")
+    multi = (os.getenv("DISCORD_GUILD_IDS", "") or "").strip()
+    ids: list[int] = []
+    if multi:
+        for part in re.split(r"[\s,]+", multi):
             if not part:
                 continue
             try:
-                guild_ids.append(int(part))
+                ids.append(int(part))
             except ValueError:
                 logger.warning("Ignoring non-numeric guild id in DISCORD_GUILD_IDS: %s", part)
-    elif single_guild:
+    elif single:
         try:
-            guild_ids.append(int(single_guild))
+            ids.append(int(single))
         except ValueError:
-            logger.warning(
-                "Invalid DISCORD_GUILD_ID value (not an integer): %s",
-                single_guild,
-            )
+            logger.warning("Invalid DISCORD_GUILD_ID value (not an integer): %s", single)
+    return single, ids
 
-    # Helper readers that treat empty values as unset
-    def _s(name: str, default: str, upper: bool = False) -> str:
-        val = os.getenv(name)
-        if val is None or val.strip() == "":
-            val = default
-        return val.upper() if upper else val
 
-    def _i(name: str, default: int) -> int:
-        raw = os.getenv(name)
-        if raw is None or raw.strip() == "":
-            return default
-        try:
-            return int(raw)
-        except ValueError:
-            return default
+# Helper readers that treat empty values as unset
+def _s(name: str, default: str, *, upper: bool = False) -> str:
+    val = os.getenv(name)
+    if val is None or val.strip() == "":
+        val = default
+    return val.upper() if upper else val
+
+
+def _i(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def load_config() -> Config:
+    single_guild, guild_ids = _parse_guilds()
 
     return Config(
         DISCORD_TOKEN=_s("DISCORD_TOKEN", ""),
