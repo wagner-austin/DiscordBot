@@ -1,1 +1,1 @@
-start: poetry run python -m clubbot.main
+start: PYTHONPATH=src python -m clubbot.main
