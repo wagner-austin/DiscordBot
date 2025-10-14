@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["python311", "poetry"]
+
+[phases.install]
+cmds = [
+  "poetry install --no-interaction --no-ansi"
+]
+
+[phases.start]
+cmd = "poetry run python -m clubbot.main"
+
