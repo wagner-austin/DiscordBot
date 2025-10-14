@@ -37,18 +37,25 @@ class QRCog(BaseCog):
             # Validate and normalize first (ensures clear user errors before rate-limiting)
             _ = build_effective_qr_options(url, self.config)
 
-            # Generate image using injected service
-            result = self.qr_service.generate_qr(url)
-
-            # Rate limit after successful validation and generation to prioritize clear errors
+            # Apply rate limit (fast user feedback if limited)
             allowed, wait_seconds = self.rate_limiter.allow(ctx.user.id, "qrcode")
             if not allowed:
                 await ctx.respond(
                     f"Please wait {int(wait_seconds)} seconds before generating another QR code",
-                    ephemeral=True,
+                    ephemeral=not self.config.QR_PUBLIC_RESPONSES,
                 )
                 log.info("Rate limited user=%s", ctx.user.id)
                 return
+
+            # Defer to guarantee acks under 3s for slow generation
+            if hasattr(ctx, "defer"):
+                import contextlib
+
+                with contextlib.suppress(Exception):
+                    await ctx.defer(ephemeral=not self.config.QR_PUBLIC_RESPONSES)
+
+            # Generate image using injected service
+            result = self.qr_service.generate_qr(url)
 
         except UserInputError as e:
             await self.handle_user_error(ctx, log, str(e))
@@ -61,8 +68,11 @@ class QRCog(BaseCog):
         ts = int(time.time())
         filename = f"qrcode_{ts}.png"
         file = discord.File(fp=BytesIO(result.image_png), filename=filename)
-        content = f"Destination: <{result.url}>"
-        await ctx.respond(content=content, file=file, ephemeral=True)
+        # Place the URL as regular text above the image, with a blank line before and after
+        # Use zero-width spaces before newlines to preserve blank lines in Discord
+        content = f"\u200b\n🌐 <{result.url}>\n\u200b\n"
+        content = f"\u200b\n🌐 <{result.url}>\n"
+        await ctx.respond(content=content, file=file, ephemeral=not self.config.QR_PUBLIC_RESPONSES)
 
 
 def setup(bot: commands.Bot) -> None:

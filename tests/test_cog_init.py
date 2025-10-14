@@ -18,6 +18,7 @@ def make_cfg() -> Config:
         QR_DEFAULT_BORDER=2,
         QR_DEFAULT_FILL_COLOR="#000000",
         QR_DEFAULT_BACK_COLOR="#FFFFFF",
+        QR_PUBLIC_RESPONSES=True,
     )
 
 

@@ -26,7 +26,8 @@ class FakeCtx:
     async def respond(self, message=None, file=None, ephemeral=None, **kwargs):  # type: ignore[no-untyped-def]
         # Support both 'message' and 'content' kw for convenience
         content = kwargs.get("content", message)
-        self.calls.append({"message": content, "file": file, "ephemeral": ephemeral})
+        ep = True if ephemeral is None else bool(ephemeral)
+        self.calls.append({"message": content, "file": file, "ephemeral": ep})
 
 
 def make_cfg(per: int = 5, window: int = 60) -> Config:
@@ -42,6 +43,7 @@ def make_cfg(per: int = 5, window: int = 60) -> Config:
         QR_DEFAULT_BORDER=2,
         QR_DEFAULT_FILL_COLOR="#000000",
         QR_DEFAULT_BACK_COLOR="#FFFFFF",
+        QR_PUBLIC_RESPONSES=True,
     )
 
 
@@ -60,7 +62,7 @@ async def test_qrcode_accepts_bare_hostname_and_replies_with_file():
 
     assert ctx.calls, "Expected a respond call"
     last = ctx.calls[-1]
-    assert last["file"] is not None and last["ephemeral"] is True
+    assert last["file"] is not None
 
 
 @pytest.mark.asyncio
@@ -98,7 +100,8 @@ async def test_qrcode_rate_limit_message_on_second_call():
     assert len(ctx.calls) >= 2
     last = ctx.calls[-1]
     assert isinstance(last["message"], str) and last["message"].startswith("Please wait ")
-    assert last["ephemeral"] is True
+    # Ephemeral behavior follows configuration
+    assert last["ephemeral"] == (not cfg.QR_PUBLIC_RESPONSES)
 
 
 @pytest.mark.asyncio

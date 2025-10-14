@@ -279,31 +279,32 @@ TTL: Command-specific (30-300 seconds)
 
 **Description:** Generate a QR code from a URL
 
-**Parameters:**
+**Parameters (LVP):**
 | Name | Type | Required | Description | Validation |
 |------|------|----------|-------------|------------|
-| url | String | Yes | Target URL for QR code | Must start with http:// or https:// |
-| error_correction | String | No | Error correction level | Choices: "L" (7%), "M" (15%, default), "Q" (25%), "H" (30%) |
-| box_size | Integer | No | Pixel size of each QR box | Range: 5-20, default: 10 |
-| border | Integer | No | Border thickness in boxes | Range: 1-10, default: 4 |
-| fill_color | String | No | Foreground color | Hex code (e.g., "#000000") or name, default: "black" |
-| back_color | String | No | Background color | Hex code or name, default: "white" |
+| url | String | Yes | Target URL for QR code | Friendly handling: accepts bare hostnames (e.g., `example.com`) and normalizes to `https://...`; only http/https schemes are allowed. |
+
+Note: Styling options (error_correction, box_size, border, fill_color, back_color) are configured via environment defaults in this LVP and are not exposed as slash parameters. They can be promoted to optional parameters in a future iteration.
 
 **Permissions:** All members
 
-**Response:** Ephemeral message with QR code PNG attachment
+**Response:**
+- Defers with an ephemeral acknowledgement to avoid timeouts on slow renders
+- Ephemeral message with QR code PNG attachment
+- Includes a clickable hyperlink to the normalized destination URL for confirmation
 
 **Error Handling:**
-- Invalid URL: "Please provide a valid URL starting with http:// or https://"
-- Invalid color: "Invalid color format. Use hex codes (e.g., #FF0000) or color names"
+- Invalid URL: clear validation messages (e.g., "Please provide a valid URL", "URL scheme must be http or https", or "Please provide a valid host (e.g., example.com)")
+- Invalid color (when exposed): "Invalid color format. Use hex codes (e.g., #FF0000) or color names"
 - Rate limit: "Please wait {seconds} seconds before generating another QR code"
 
-**Rate Limit:** 5 QR codes per user per minute
+**Rate Limit:** Default 1 QR code per user per second (configurable via `QRCODE_RATE_LIMIT` and `QRCODE_RATE_WINDOW_SECONDS`).
 
 **Implementation Notes:**
-- Use `qrcode` Python library with `PIL` backend
-- Generate in-memory PNG, send as Discord file attachment
-- QR code filename: `qrcode_{timestamp}.png`
+- Validate and normalize the URL before applying rate limiting to ensure clear user errors
+- Use `ctx.defer(ephemeral=True)` prior to generation to guarantee a quick acknowledgement
+- Use `qrcode[pil]` to generate an in-memory PNG; send as Discord file attachment
+- Include destination link in response; filename pattern: `qrcode_{timestamp}.png`
 
 ---
 

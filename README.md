@@ -3,12 +3,14 @@
 Least-viable product: a modular Python bot that provides a `/qrcode` slash command returning a PNG in an ephemeral response. Built with Poetry and py-cord.
 
 ## Features
-- `/qrcode url:<https://...> [error_correction] [box_size] [border] [fill_color] [back_color]`
-  - Tip: You can omit the scheme. `google.com` or `www.example.org/path` are accepted and normalized to `https://...`.
-- Brandable defaults via env vars
+- `/qrcode url:<https://...>`
+  - LVP: only `url` is exposed as a parameter. Styling options use env defaults (see below).
+  - Friendly URL handling: `google.com`, `www.example.org/path`, IPv4/IPv6, and `localhost` are accepted and normalized to `https://...`.
+- Brandable defaults via env vars (ECC, box size, border, colors)
 - Input validation and friendly errors
-  - URL normalization: accepts bare domains and adds `https://` automatically
+  - Clear messages for invalid scheme/host and overly long URLs
   - Response includes a clickable hyperlink to the destination URL for confirmation
+- Public responses by default: the PNG and a clickable link to the destination URL are visible to everyone; validation and rate-limit messages remain ephemeral
 - Modular structure (cogs, services, utils)
 
 ## Prerequisites
@@ -31,7 +33,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
 - Create a new project from this repo
 - Set Environment Variables:
   - `DISCORD_TOKEN`, `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS`
-  - Optional QR defaults
+  - Optional QR defaults (see Environment)
 - Start command: `python -m clubbot.main`
 
 ## Project Layout
@@ -56,6 +58,27 @@ src/clubbot/
 - This LVP does not include database or Redis. Those are planned for tasks, points, and leaderboards.
 - Commands are registered to the guild in `DISCORD_GUILD_ID` for fast iteration. Remove guild scoping to promote to global commands later.
 - During verification, commands are synced only to target guilds (`DISCORD_GUILD_ID`/`DISCORD_GUILD_IDS`). There is no global fallback. Add the bot to the target guild(s) to see commands.
+
+## Environment
+- Required
+  - `DISCORD_TOKEN`
+- Recommended (fast iteration)
+  - `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS`
+- QR defaults (brand/styling)
+  - `QR_DEFAULT_ERROR_CORRECTION` (L, M, Q, H — default M)
+  - `QR_DEFAULT_BOX_SIZE` (default 10)
+  - `QR_DEFAULT_BORDER` (default 1)
+  - `QR_DEFAULT_FILL_COLOR` (default `#000000`)
+  - `QR_DEFAULT_BACK_COLOR` (default `#FFFFFF`)
+- Rate limiting (per-user)
+  - `QRCODE_RATE_LIMIT` (default 1)
+  - `QRCODE_RATE_WINDOW_SECONDS` (default 1)
+  - `QR_PUBLIC_RESPONSES` (default true). When true, responses are public (ephemeral=false). When false, responses are ephemeral (visible only to the requester).
+  - `QR_PUBLIC_RESPONSES` (default `true`) — set to `false` to make success responses ephemeral
+
+Behavior
+- Validation happens before rate limiting so users always see clear input errors rather than generic cooldown messages.
+- After validation and passing the rate limit, the command calls `defer(ephemeral=True)` to guarantee a quick acknowledgement during QR generation.
 
 ## Linting & Formatting
 - Lint: `make lint` (ruff check)

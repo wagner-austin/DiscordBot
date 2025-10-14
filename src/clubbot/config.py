@@ -17,6 +17,13 @@ class Config:
     QR_DEFAULT_BORDER: int
     QR_DEFAULT_FILL_COLOR: str
     QR_DEFAULT_BACK_COLOR: str
+    QR_PUBLIC_RESPONSES: bool
+    # Metrics / Stats
+    METRICS_ENABLED: bool = True
+    METRICS_SQLITE_PATH: str = "data/metrics.sqlite"
+    METRICS_REDACT_QUERY: bool = True
+    QR_STATS_OFFICER_ROLE: str = "officers"
+    QR_STATS_DEFAULT_WINDOW: str = "7d"
 
 
 def load_config() -> Config:
@@ -51,9 +58,18 @@ def load_config() -> Config:
         QRCODE_RATE_WINDOW_SECONDS=int(os.getenv("QRCODE_RATE_WINDOW_SECONDS", "1")),
         QR_DEFAULT_ERROR_CORRECTION=os.getenv("QR_DEFAULT_ERROR_CORRECTION", "M").upper(),
         QR_DEFAULT_BOX_SIZE=int(os.getenv("QR_DEFAULT_BOX_SIZE", "10")),
-        QR_DEFAULT_BORDER=int(os.getenv("QR_DEFAULT_BORDER", "2")),
+        QR_DEFAULT_BORDER=int(os.getenv("QR_DEFAULT_BORDER", "1")),
         QR_DEFAULT_FILL_COLOR=os.getenv("QR_DEFAULT_FILL_COLOR", "#000000"),
         QR_DEFAULT_BACK_COLOR=os.getenv("QR_DEFAULT_BACK_COLOR", "#FFFFFF"),
+        QR_PUBLIC_RESPONSES=os.getenv("QR_PUBLIC_RESPONSES", "true").strip().lower()
+        in {"1", "true", "yes", "y", "on"},
+        METRICS_ENABLED=os.getenv("METRICS_ENABLED", "true").strip().lower()
+        in {"1", "true", "yes", "y", "on"},
+        METRICS_SQLITE_PATH=os.getenv("METRICS_SQLITE_PATH", "data/metrics.sqlite"),
+        METRICS_REDACT_QUERY=os.getenv("METRICS_REDACT_QUERY", "true").strip().lower()
+        in {"1", "true", "yes", "y", "on"},
+        QR_STATS_OFFICER_ROLE=os.getenv("QR_STATS_OFFICER_ROLE", "officers"),
+        QR_STATS_DEFAULT_WINDOW=os.getenv("QR_STATS_DEFAULT_WINDOW", "7d"),
     )
 
 
