@@ -40,6 +40,7 @@ class ServiceContainer:
     async def wire_bot_async(self, bot: commands.Bot) -> None:
         """Attach all cogs to the bot (idempotent)."""
         # Import locally to avoid import cycles at module import time
+        from .cogs.invite import InviteCog
         from .cogs.qr import QRCog
 
         logger = logging.getLogger(__name__)
@@ -48,3 +49,6 @@ class ServiceContainer:
             # Keep metrics available for future internal use; only QRCog is exposed.
             await bot.add_cog(QRCog(bot, self.cfg, self.qr_service))
             logger.info("Loaded cog: QRCog")
+        if bot.get_cog("InviteCog") is None:
+            await bot.add_cog(InviteCog(bot, self.cfg))
+            logger.info("Loaded cog: InviteCog")
