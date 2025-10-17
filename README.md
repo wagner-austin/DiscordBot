@@ -1,6 +1,6 @@
 # Discord Club Bot LVP
 
-Least-viable product: a modular Python bot that provides a `/qrcode` slash command returning a PNG in an ephemeral response. Built with Poetry and py-cord.
+Least-viable product: a modular Python bot that provides a `/qrcode` slash command returning a PNG. Built with Poetry and discord.py (app commands).
 
 ## Features
 - `/qrcode url:<https://...>`
@@ -10,35 +10,35 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
 - Input validation and friendly errors
   - Clear messages for invalid scheme/host and overly long URLs
   - Response includes a clickable hyperlink to the destination URL for confirmation
-- Public responses by default: the PNG and a clickable link to the destination URL are visible to everyone; validation and rate-limit messages remain ephemeral
+- Public responses by default: the PNG and a clickable link are visible to everyone; validation and rate-limit messages remain ephemeral
 - Modular structure (cogs, services, utils)
+- Global-only app commands (no per-guild copies) with DM support enabled
 
 ## Prerequisites
 - Python 3.11+
 - Poetry
 - A Discord Application with a Bot token
+- Developer Portal → Bot → Privileged Gateway Intents: enable “Message Content Intent”
 
 ## Setup
-1. Copy `.env.example` to `.env` and fill in values (at least `DISCORD_TOKEN`, and for fast testing `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS`).
+1. Copy `.env.example` to `.env` and fill in values (at least `DISCORD_TOKEN`).
 2. Install deps: `poetry install`
-3. Run locally: `poetry run python -m clubbot.main`
-4. Invite the bot:
+3. One-time global sync (first run only): set `COMMANDS_SYNC_ON_START=true` in `.env`, then run `make run`. After you see “Performed global command sync”, set it back to `false`.
+4. Invite the bot to a server:
    - Developer Portal → OAuth2 → URL Generator
    - Scopes: `bot`, `applications.commands`
    - Permissions: View Channels, Send Messages, Attach Files, Embed Links, Read Message History, Use Application Commands
-   - Use the generated URL to add the bot to your server
-5. Test `/qrcode` in your server.
+   - Or run `poetry run python scripts/invite.py`
+5. Use `/qrcode` in a server or a DM. Global command propagation can take up to ~1 hour on first registration.
 
-## Deployment (Railway)
-- Create a new project from this repo.
-- In the service settings, set Deployment Method to Dockerfile (this repo includes a Dockerfile).
-- Environment Variables (Project → Variables):
-  - `DISCORD_TOKEN`, `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS`
+## Deployment
+- Build via Dockerfile (included) or run with a process manager.
+- Environment Variables:
+  - `DISCORD_TOKEN` (required)
   - Optional QR defaults (see Environment below)
-  - Optional `LOG_LEVEL` (e.g., `INFO` or `DEBUG`)
-  - Optional `COMMANDS_SYNC_GLOBAL` (`true`/`false`)
-- No Start Command needed; Docker CMD runs `python -m clubbot.main` inside the Poetry environment.
-- Enable auto‑deploy on push.
+  - `LOG_LEVEL` (e.g., `INFO` or `DEBUG`)
+  - `COMMANDS_SYNC_GLOBAL=true` and `COMMANDS_SYNC_ON_START=true` for the first boot after changing commands; then set `COMMANDS_SYNC_ON_START=false`.
+  - `BOT_INSTANCE_ID` (optional): overrides the per-process instance id used in logs
 
 ## Project Layout
 ```
@@ -59,15 +59,14 @@ src/clubbot/
 ```
 
 ## Notes
-- This LVP does not include database or Redis. Those are planned for tasks, points, and leaderboards.
-- Commands are registered to the guild in `DISCORD_GUILD_ID` for fast iteration. Remove guild scoping to promote to global commands later.
-- During verification, commands are synced only to target guilds (`DISCORD_GUILD_ID`/`DISCORD_GUILD_IDS`). There is no global fallback. Add the bot to the target guild(s) to see commands.
+- This LVP does not include database or Redis.
+- Global-only commands: we sync globally via `bot.tree.sync()` and allow DMs (no per-guild copies by default).
+- Propagation: initial global registration may take up to ~1 hour; subsequent edits are often faster.
 
 ## Metrics
 - Backend: SQLite (default `data/metrics.sqlite`)
 - Logs both successes and failures (validation, rate-limit, internal errors)
 - Stats command: `/qrstats` (Officers role only). No parameters — uses defaults.
-- Default window comes from `QR_STATS_DEFAULT_WINDOW` and shows top 10 links.
 - Environment:
   - `METRICS_ENABLED` (default `true`)
   - `METRICS_SQLITE_PATH` (default `data/metrics.sqlite`)
@@ -75,13 +74,15 @@ src/clubbot/
   - `QR_STATS_OFFICER_ROLE` (default `officers`)
   - `QR_STATS_DEFAULT_WINDOW` (default `7d`)
   - `QR_STATS_ADMIN_USER_IDS` (comma/space separated user IDs; allowed to use `/qrstats` in DMs)
-  - `COMMANDS_SYNC_GLOBAL` (default `false`; when `true` also syncs commands globally so they are available in DMs — propagation may take up to 1 hour)
+  - `COMMANDS_SYNC_GLOBAL` (default `false`; when `true` and `COMMANDS_SYNC_ON_START=true`, performs a one-time global sync on boot; propagation may take up to ~1 hour)
 
 ## Environment
 - Required
   - `DISCORD_TOKEN`
-- Recommended (fast iteration)
-  - `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS`
+- Optional
+  - `LOG_LEVEL`
+  - `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS` (no per-guild copies are created by default; globals cover all guilds)
+  - `BOT_INSTANCE_ID` to set a stable id across restarts/containers (otherwise auto-derived)
 - QR defaults (brand/styling)
   - `QR_DEFAULT_ERROR_CORRECTION` (L, M, Q, H — default M)
   - `QR_DEFAULT_BOX_SIZE` (default 10)
@@ -91,28 +92,24 @@ src/clubbot/
 - Rate limiting (per-user)
   - `QRCODE_RATE_LIMIT` (default 1)
   - `QRCODE_RATE_WINDOW_SECONDS` (default 1)
-  - `QR_PUBLIC_RESPONSES` (default true). When true, responses are public (ephemeral=false). When false, responses are ephemeral (visible only to the requester).
   - `QR_PUBLIC_RESPONSES` (default `true`) — set to `false` to make success responses ephemeral
 
 Behavior
 - Validation happens before rate limiting so users always see clear input errors rather than generic cooldown messages.
-- After validation and passing the rate limit, the command calls `defer(ephemeral=True)` to guarantee a quick acknowledgement during QR generation.
+- The command defers immediately (ACK first) to avoid Discord’s 3s timeout; work runs after the ACK.
 
 ## Linting & Formatting
 - Lint: `make lint` (ruff check)
 - Auto-fix: `make lint-fix`
 - Format: `make format`
 - Type check: `make typecheck` (strict mypy on src/)
- - Check: `make check` (ruff --fix, format, mypy, then pytest)
+- Check: `make check` (ruff --fix, format, mypy, then pytest)
 
 ## Building New Cogs
 - Inherit from `clubbot.cogs.base.BaseCog` for consistent logging and errors.
-- At the start of each command handler:
-  - `req_id = self.new_request_id()`
-  - `set_request_id(req_id)` to propagate the id to all logs
-  - `log = self.request_logger(req_id)` and use `log.info/debug/...`
-- For user validation errors, raise or catch `UserInputError` and use `await self.handle_user_error(ctx, log, message)`.
-- For unexpected exceptions, use `await self.handle_exception(ctx, log, exc)`.
+- In app command handlers, call `interaction.response.defer(...)` first; then set up request-scoped logging via `new_request_id()` and `request_logger()`.
+- For user validation errors, raise/catch `UserInputError` and use `await self.handle_user_error(interaction, log, message)`.
+- For unexpected exceptions, use `await self.handle_exception(interaction, log, exc)`.
 
 Correlation header for outbound HTTP:
 - Use `utils.correlation.add_correlation_header(headers, req_id)` to include `X-Request-ID`.

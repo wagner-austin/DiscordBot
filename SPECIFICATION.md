@@ -1,5 +1,13 @@
 # Discord Club Bot - Complete Specification Document
 
+> Implementation Snapshot (Oct 2025)
+>
+> - Library: discord.py (app commands)
+> - Commands: global-only via `bot.tree.sync()`; DMs enabled through allowed contexts/installs
+> - No per-guild command copies by default
+> - Message Content Intent: enabled in code (for optional prefixed commands and to silence warnings); slash commands do not require it
+> - No Redis/DB used by the current LVP runtime; Redis/DB features remain roadmap in this spec
+
 ## 1. DATABASE SCHEMAS
 
 ### 1.1 PostgreSQL Tables
@@ -952,7 +960,7 @@ OFFICERS_ROLE_NAME=officers
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| py-cord | ^2.6.1 | Discord API library with slash command support |
+| discord.py | ^2.4.0 | Discord API library with app commands |
 | psycopg2-binary | ^2.9.9 | PostgreSQL database adapter |
 | SQLAlchemy | ^2.0.23 | ORM for database models |
 | redis | ^5.0.1 | Redis client for Upstash connection |
@@ -979,7 +987,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-py-cord = "^2.6.1"
+discord.py = "^2.4.0"
 psycopg2-binary = "^2.9.9"
 SQLAlchemy = "^2.0.23"
 redis = "^5.0.1"
@@ -1028,41 +1036,24 @@ build-backend = "poetry.core.masonry.api"
 - Manage Roles (for future role rewards)
 
 **Privileged Gateway Intents:**
-- Server Members Intent (required for on_member_join)
-- Message Content Intent (NOT required, we use slash commands)
+- Server Members Intent (required only if implementing member events; not used in the current LVP)
+- Message Content Intent (enabled in code; slash commands do not require it but this avoids warnings and allows optional prefixed commands)
 
 ### 10.3 Configuration Files
 
-#### config.py
-```python
-import os
-from typing import Optional
+#### config.py (LVP runtime)
+The running LVP uses a lightweight configuration focused on `/qrcode` and metrics.
 
-class Config:
-    DISCORD_TOKEN: str = os.getenv("DISCORD_TOKEN")
-    DISCORD_GUILD_ID: int = int(os.getenv("DISCORD_GUILD_ID"))
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
-    REDIS_URL: str = os.getenv("REDIS_URL")
-    REDIS_TOKEN: str = os.getenv("REDIS_TOKEN")
-    OFFICERS_ROLE_NAME: str = os.getenv("OFFICERS_ROLE_NAME", "officers")
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-
-    # Rate limits (per minute)
-    QRCODE_RATE_LIMIT: int = 5
-    TASK_SUBMIT_RATE_LIMIT: int = 3
-
-    # QR Code defaults
-    QR_DEFAULT_ERROR_CORRECTION: str = "M"
-    QR_DEFAULT_BOX_SIZE: int = 10
-    QR_DEFAULT_BORDER: int = 4
-    QR_DEFAULT_FILL_COLOR: str = "black"
-    QR_DEFAULT_BACK_COLOR: str = "white"
-
-    # Pagination
-    TASKS_PER_PAGE: int = 5
-    LEADERBOARD_DEFAULT_SIZE: int = 10
-    SUBMISSIONS_PER_PAGE: int = 5
-```
+Key env vars (see `src/clubbot/config.py`):
+- `DISCORD_TOKEN` (required)
+- `DISCORD_GUILD_IDS` (optional; no per‑guild copies are created by default)
+- `LOG_LEVEL` (default `INFO`)
+- QR defaults: `QR_DEFAULT_ERROR_CORRECTION`, `QR_DEFAULT_BOX_SIZE`, `QR_DEFAULT_BORDER`, `QR_DEFAULT_FILL_COLOR`, `QR_DEFAULT_BACK_COLOR`
+- Rate limit: `QRCODE_RATE_LIMIT`, `QRCODE_RATE_WINDOW_SECONDS`
+- `QR_PUBLIC_RESPONSES` (default `true`)
+- Metrics: `METRICS_ENABLED`, `METRICS_SQLITE_PATH`, `METRICS_REDACT_QUERY`, `QR_STATS_OFFICER_ROLE`, `QR_STATS_DEFAULT_WINDOW`, `QR_STATS_ADMIN_USER_IDS`
+- Global sync controls: `COMMANDS_SYNC_ON_START`, `COMMANDS_SYNC_GLOBAL` (global‑only; no Upstash hash/lock)
+- Optional: `BOT_INSTANCE_ID` to label logs
 
 ---
 
@@ -1400,7 +1391,7 @@ These features are NOT part of initial implementation but documented for future 
 ### Performance Targets
 - [ ] Slash command response time: < 2 seconds
 - [ ] QR code generation: < 3 seconds
-- [ ] Leaderboard query: < 1 second (via Redis)
+- [ ] Leaderboard query: < 1 second (via Redis) — future milestone
 - [ ] Bot uptime: 99.5%+
 
 ### User Experience Goals
