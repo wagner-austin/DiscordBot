@@ -3,12 +3,10 @@ from __future__ import annotations
 import contextlib
 import logging
 import uuid
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
+import discord
 from discord.ext import commands
-
-if TYPE_CHECKING:
-    import discord
 
 
 class BaseCog(commands.Cog):
@@ -28,34 +26,36 @@ class BaseCog(commands.Cog):
 
     async def handle_user_error(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         log: logging.LoggerAdapter[logging.Logger],
         message: str,
     ) -> None:
         log.debug("User error: %s", message)
-        # Use follow-up if we've already acknowledged (deferred/responded)
-        fu = getattr(ctx, "followup", None)
-        if getattr(ctx, "responded", False) and isinstance(fu, _FollowupLike):
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+        except Exception:
             with contextlib.suppress(Exception):
-                await fu.send(message, ephemeral=True)
-            return
-        await ctx.respond(message, ephemeral=True)
+                await interaction.followup.send(message, ephemeral=True)
 
     async def handle_exception(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         log: logging.LoggerAdapter[logging.Logger],
         exc: Exception,
     ) -> None:
         log.exception("Unhandled exception: %s", exc)
-        # Prefer follow-up after a prior defer; otherwise initial respond
-        fu = getattr(ctx, "followup", None)
-        if getattr(ctx, "responded", False) and isinstance(fu, _FollowupLike):
-            with contextlib.suppress(Exception):
-                await fu.send("An error occurred. Please try again later.", ephemeral=True)
-            return
         with contextlib.suppress(Exception):
-            await ctx.respond("An error occurred. Please try again later.", ephemeral=True)
+            if interaction.response.is_done():
+                await interaction.followup.send(
+                    "An error occurred. Please try again later.", ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "An error occurred. Please try again later.", ephemeral=True
+                )
 
 
 @runtime_checkable
