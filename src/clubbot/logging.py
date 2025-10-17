@@ -1,8 +1,12 @@
 import contextvars
 import logging
+import os
+import socket
 import sys
+import uuid
 
 REQUEST_ID_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+INSTANCE_ID: str | None = None
 
 
 def set_request_id(request_id: str) -> None:
@@ -21,11 +25,40 @@ class RequestIdFilter(logging.Filter):
         return True
 
 
+class InstanceIdFilter(logging.Filter):
+    """Attach a stable per-process instance_id to every record."""
+
+    def __init__(self, instance_id: str) -> None:
+        super().__init__()
+        self.instance_id = instance_id
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - trivial
+        record.instance_id = self.instance_id
+        return True
+
+
+def _compute_instance_id() -> str:
+    # Allow explicit override
+    explicit = os.getenv("BOT_INSTANCE_ID", "").strip()
+    if explicit:
+        return explicit
+    # Derive a short readable id from host, pid, and a short uuid
+    host = socket.gethostname().split(".")[0]
+    pid = os.getpid()
+    suffix = uuid.uuid4().hex[:6]
+    return f"{host}-{pid}-{suffix}"
+
+
 def setup_logging(level: str = "INFO") -> None:
     # Use force=True to ensure our config applies even if another library configured logging first.
+    global INSTANCE_ID
+    INSTANCE_ID = _compute_instance_id()
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="[%(asctime)s] [%(levelname)s] [%(name)s] [req=%(request_id)s] %(message)s",
+        format=(
+            "[%(asctime)s] [%(levelname)s] [%(name)s] "
+            "[inst=%(instance_id)s req=%(request_id)s] %(message)s"
+        ),
         datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stdout,
         force=True,
@@ -34,8 +67,14 @@ def setup_logging(level: str = "INFO") -> None:
     root = logging.getLogger()
     for handler in root.handlers:
         handler.addFilter(RequestIdFilter())
+        handler.addFilter(InstanceIdFilter(INSTANCE_ID))
     # Quiet noisy third-party loggers by default
     logging.getLogger("discord").setLevel(logging.WARNING)
     logging.getLogger("discord.gateway").setLevel(logging.WARNING)
     logging.getLogger("discord.client").setLevel(logging.WARNING)
     logging.getLogger(__name__).debug("Logging configured at level %s", level.upper())
+    logging.getLogger(__name__).info("Bot instance id: %s", INSTANCE_ID)
+
+
+def get_instance_id() -> str:
+    return INSTANCE_ID or "-"
