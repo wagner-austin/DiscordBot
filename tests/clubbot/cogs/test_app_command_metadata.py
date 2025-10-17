@@ -24,13 +24,27 @@ def make_cfg() -> Config:
 
 
 @pytest.mark.asyncio
-async def test_qr_cog_can_be_added_to_bot():
+async def test_qrcode_metadata_allows_dms_and_user_installs():
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg()
     service = QRService(cfg)
 
-    cog = QRCog(bot, cfg, service)
-    await bot.add_cog(cog)
+    await bot.add_cog(QRCog(bot, cfg, service))
 
-    assert bot.get_cog("QRCog") is cog
+    cmds = {c.name: c for c in bot.tree.get_commands()}
+    assert "qrcode" in cmds, "qrcode command not registered on app command tree"
+    cmd = cmds["qrcode"]
+
+    # Validate contexts include DM/guild via allowed_contexts (discord.py 2.4)
+    assert cmd.allowed_contexts is not None
+    ctxs = cmd.allowed_contexts
+    assert ctxs.guild is True
+    assert ctxs.dm_channel is True
+    assert ctxs.private_channel is True
+
+    # Validate installs include user and guild via allowed_installs
+    assert cmd.allowed_installs is not None
+    inst = cmd.allowed_installs
+    assert inst.user is True
+    assert inst.guild is True

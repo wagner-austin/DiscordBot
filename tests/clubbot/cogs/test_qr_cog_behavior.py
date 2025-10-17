@@ -18,16 +18,36 @@ class FakeQRService:
         return type("QRResult", (), {"image_png": b"\x89PNG\r\n\x1a\n", "url": url})()
 
 
-class FakeCtx:
+class FakeResponse:
+    def __init__(self, parent: "FakeInteraction") -> None:
+        self._done = False
+        self._parent = parent
+
+    def is_done(self) -> bool:  # type: ignore[override]
+        return self._done
+
+    async def defer(self, *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+        self._done = True
+
+    async def send_message(self, content: str = "", *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+        self._done = True
+        self._parent.calls.append({"message": content, "file": None, "ephemeral": ephemeral})
+
+
+class FakeFollowup:
+    def __init__(self, parent: "FakeInteraction") -> None:
+        self._parent = parent
+
+    async def send(self, content: str = "", *, file=None, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+        self._parent.calls.append({"message": content, "file": file, "ephemeral": ephemeral})
+
+
+class FakeInteraction:
     def __init__(self) -> None:
         self.calls: list[dict] = []
         self.user = SimpleNamespace(id=123456)
-
-    async def respond(self, message=None, file=None, ephemeral=None, **kwargs):  # type: ignore[no-untyped-def]
-        # Support both 'message' and 'content' kw for convenience
-        content = kwargs.get("content", message)
-        ep = True if ephemeral is None else bool(ephemeral)
-        self.calls.append({"message": content, "file": file, "ephemeral": ep})
+        self.response = FakeResponse(self)
+        self.followup = FakeFollowup(self)
 
 
 def make_cfg(per: int = 5, window: int = 60) -> Config:
@@ -50,36 +70,34 @@ def make_cfg(per: int = 5, window: int = 60) -> Config:
 @pytest.mark.asyncio
 async def test_qrcode_accepts_bare_hostname_and_replies_with_file():
     intents = discord.Intents.default()
-    bot = commands.Bot(intents=intents)
+    bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1_000_000, window=1)
     from src.clubbot.services.qr_app import QRService
 
     svc = QRService(cfg)
     cog = QRCog(bot, cfg, svc)
-    ctx = FakeCtx()
+    interaction = FakeInteraction()
+    await cog.qrcode.callback(cog, interaction, "example.com")
 
-    await cog.qrcode.callback(cog, ctx, "example.com")
-
-    assert ctx.calls, "Expected a respond call"
-    last = ctx.calls[-1]
+    assert interaction.calls, "Expected a respond call"
+    last = interaction.calls[-1]
     assert last["file"] is not None
 
 
 @pytest.mark.asyncio
 async def test_qrcode_invalid_url_returns_user_message():
     intents = discord.Intents.default()
-    bot = commands.Bot(intents=intents)
+    bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg()
     from src.clubbot.services.qr_app import QRService
 
     svc = QRService(cfg)
     cog = QRCog(bot, cfg, svc)
-    ctx = FakeCtx()
+    interaction = FakeInteraction()
+    await cog.qrcode.callback(cog, interaction, "not a url with spaces")
 
-    await cog.qrcode.callback(cog, ctx, "not a url with spaces")
-
-    assert ctx.calls, "Expected a respond call"
-    last = ctx.calls[-1]
+    assert interaction.calls, "Expected a respond call"
+    last = interaction.calls[-1]
     msg = str(last["message"]) or ""
     # Accept legacy and friendlier validation messages
     assert (
@@ -93,18 +111,17 @@ async def test_qrcode_invalid_url_returns_user_message():
 @pytest.mark.asyncio
 async def test_qrcode_rate_limit_message_on_second_call():
     intents = discord.Intents.default()
-    bot = commands.Bot(intents=intents)
+    bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1, window=1)
     svc = FakeQRService()
     cog = QRCog(bot, cfg, svc)
-    ctx = FakeCtx()
-
-    await cog.qrcode.callback(cog, ctx, "https://example.com")
-    await cog.qrcode.callback(cog, ctx, "https://example.com")
+    interaction = FakeInteraction()
+    await cog.qrcode.callback(cog, interaction, "https://example.com")
+    await cog.qrcode.callback(cog, interaction, "https://example.com")
 
     # Second call should be a rate-limit message
-    assert len(ctx.calls) >= 2
-    last = ctx.calls[-1]
+    assert len(interaction.calls) >= 2
+    last = interaction.calls[-1]
     assert isinstance(last["message"], str) and last["message"].startswith("Please wait ")
     # Ephemeral behavior follows configuration
     assert last["ephemeral"] == (not cfg.QR_PUBLIC_RESPONSES)
@@ -113,15 +130,14 @@ async def test_qrcode_rate_limit_message_on_second_call():
 @pytest.mark.asyncio
 async def test_qrcode_handles_internal_exception_with_generic_message():
     intents = discord.Intents.default()
-    bot = commands.Bot(intents=intents)
+    bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1_000_000, window=1)
     svc = FakeQRService(fail=True)
     cog = QRCog(bot, cfg, svc)
-    ctx = FakeCtx()
+    interaction = FakeInteraction()
+    await cog.qrcode.callback(cog, interaction, "https://example.com")
 
-    await cog.qrcode.callback(cog, ctx, "https://example.com")
-
-    assert ctx.calls, "Expected a respond call"
-    last = ctx.calls[-1]
+    assert interaction.calls, "Expected a respond call"
+    last = interaction.calls[-1]
     assert last["message"] == "An error occurred. Please try again later."
     assert last["ephemeral"] is True

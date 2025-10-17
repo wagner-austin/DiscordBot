@@ -9,15 +9,36 @@ from src.clubbot.cogs.qr import QRCog
 from src.clubbot.config import Config
 
 
-class FakeCtx:
+class FakeResponse:
+    def __init__(self, parent: "FakeInteraction") -> None:
+        self._done = False
+        self._parent = parent
+
+    def is_done(self) -> bool:  # type: ignore[override]
+        return self._done
+
+    async def defer(self, *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+        self._done = True
+
+    async def send_message(self, content: str = "", *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+        self._done = True
+        self._parent.calls.append({"message": content, "file": None, "ephemeral": ephemeral})
+
+
+class FakeFollowup:
+    def __init__(self, parent: "FakeInteraction") -> None:
+        self._parent = parent
+
+    async def send(self, content: str = "", *, file=None, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+        self._parent.calls.append({"message": content, "file": file, "ephemeral": ephemeral})
+
+
+class FakeInteraction:
     def __init__(self, uid: int) -> None:
         self.calls: list[dict] = []
         self.user = SimpleNamespace(id=uid)
-
-    async def respond(self, message=None, file=None, ephemeral=None, **kwargs):  # type: ignore[no-untyped-def]
-        content = kwargs.get("content", message)
-        ep = True if ephemeral is None else bool(ephemeral)
-        self.calls.append({"message": content, "file": file, "ephemeral": ep})
+        self.response = FakeResponse(self)
+        self.followup = FakeFollowup(self)
 
 
 def make_cfg(per: int = 1000, window: int = 1) -> Config:
@@ -50,14 +71,14 @@ class SlowQRService:
 @pytest.mark.asyncio
 async def test_qrcode_spam_concurrent_calls_complete_without_errors():
     intents = discord.Intents.default()
-    bot = commands.Bot(intents=intents)
+    bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1000, window=1)
     svc = SlowQRService(delay=0.05)
     cog = QRCog(bot, cfg, svc)  # type: ignore[arg-type]
 
     # Launch many concurrent calls with unique users to avoid rate limiter
     n = 10
-    ctxs = [FakeCtx(uid=i + 1) for i in range(n)]
+    ctxs = [FakeInteraction(uid=i + 1) for i in range(n)]
 
     async def run_one(c):
         await cog.qrcode.callback(cog, c, "example.com")
@@ -72,7 +93,7 @@ async def test_qrcode_spam_concurrent_calls_complete_without_errors():
 @pytest.mark.asyncio
 async def test_qrcode_handles_various_invalid_inputs_with_clear_messages():
     intents = discord.Intents.default()
-    bot = commands.Bot(intents=intents)
+    bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1000, window=1)
     from src.clubbot.services.qr_app import QRService
 
@@ -85,7 +106,7 @@ async def test_qrcode_handles_various_invalid_inputs_with_clear_messages():
     ]
 
     for raw in bad_inputs:
-        ctx = FakeCtx(uid=42)
+        ctx = FakeInteraction(uid=42)
         await cog.qrcode.callback(cog, ctx, raw)
         assert ctx.calls, f"Expected an error response for input: {raw!r}"
         msg = str(ctx.calls[-1]["message"]) or ""
