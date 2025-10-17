@@ -1,10 +1,11 @@
-.PHONY: help install install-dev lock run serve test invite env lint lint-fix format typecheck check
+.PHONY: help install install-dev lock run serve test invite env lint lint-fix format typecheck check commands
 
 help:
 	@echo "Targets:"
 	@echo "  make install   - Install dependencies with Poetry"
 	@echo "  make run       - Run the bot locally"
 	@echo "  make serve     - Alias for run"
+	@echo "  make commands  - Print current global/guild commands"
 	@echo "  make test      - Run test suite"
 	@echo "  make invite    - Print OAuth2 invite URL"
 	@echo "  make env       - Show required env vars"
@@ -20,6 +21,7 @@ install-dev:
 run:
 	poetry install
 	-poetry run python scripts/invite.py
+	-poetry run python scripts/list_commands.py --global --from-env
 	poetry run python -m clubbot.main
 
 serve: run
@@ -29,6 +31,9 @@ test: install-dev
 
 invite:
 	poetry run python scripts/invite.py
+
+commands:
+	poetry run python scripts/list_commands.py --global --from-env
 
 env:
 	@echo "Required: DISCORD_TOKEN"

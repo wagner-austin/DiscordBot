@@ -3,11 +3,11 @@ from __future__ import annotations
 import time
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from ..config import Config, load_config
 from ..logging import set_request_id
-from ..utils.discord_typing import slash_cmd
 from .base import BaseCog
 
 
@@ -23,20 +23,25 @@ class ExampleCog(BaseCog):
         self.bot = bot
         self.config = config
 
-    @slash_cmd(description="Simple ping to verify the bot is responsive")
-    async def ping(self, ctx: discord.ApplicationContext) -> None:
+    @app_commands.command(name="ping", description="Simple ping to verify the bot is responsive")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
+    async def ping(self, interaction: discord.Interaction) -> None:
         req_id = self.new_request_id()
         set_request_id(req_id)
         log = self.request_logger(req_id)
         try:
             started = time.time()
-            await ctx.respond(f"Pong! req={req_id}")
+            if interaction.response.is_done():
+                await interaction.followup.send(f"Pong! req={req_id}")
+            else:
+                await interaction.response.send_message(f"Pong! req={req_id}")
             elapsed = int((time.time() - started) * 1000)
             log.info("Handled /ping in %sms", elapsed)
         except Exception as exc:  # pragma: no cover - trivial
-            await self.handle_exception(ctx, log, exc)
+            await self.handle_exception(interaction, log, exc)
 
 
-def setup(bot: commands.Bot) -> None:  # pragma: no cover - trivial
+async def setup(bot: commands.Bot) -> None:  # pragma: no cover - trivial
     cfg = load_config()
-    bot.add_cog(ExampleCog(bot, cfg))
+    await bot.add_cog(ExampleCog(bot, cfg))

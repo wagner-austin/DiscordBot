@@ -4,7 +4,7 @@ import base64
 import contextlib
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable
 
 import discord
 from discord.ext import commands
@@ -29,66 +29,39 @@ class BotOrchestrator:
         # Sync bookkeeping to avoid hammering the commands endpoints on reconnects
         self._has_synced_once: bool = False
         self._last_present_ids: set[int] = set()
+        # Track a separate one-time global sync for DM availability
+        self._has_synced_global: bool = False
+        # Exposed listeners for tests (set in register_listeners)
+        self._on_ready_listener: Callable[[], Awaitable[None]] | None = None
+        self._on_guild_join_listener: Callable[[discord.Guild], Awaitable[None]] | None = None
 
     def build_bot(self) -> commands.Bot:
         intents = discord.Intents.default()
-        # Disable auto sync; we manage command sync manually per guild
-        # to avoid duplicate syncs and rate-limit churn on startup.
-        bot = commands.Bot(intents=intents, auto_sync_commands=False)
-        # Belt-and-suspenders: ensure the runtime flag is off and log it.
-        with contextlib.suppress(Exception):
-            bot.auto_sync_commands = False
-        logging.getLogger(__name__).info(
-            "auto_sync_commands=%s (expected False)",
-            getattr(bot, "auto_sync_commands", None),
-        )
-        self.bot = bot
-        return bot
+        # Enable message content if you see warnings about privileged intent.
+        # This requires the Message Content Intent to be enabled in the Developer Portal.
+        intents.message_content = True
+
+        # discord.py manages app commands via bot.tree; override setup_hook for lifecycle wiring.
+        container = self.container
+        register_listeners = self.register_listeners
+
+        class _Bot(commands.Bot):
+            async def setup_hook(self) -> None:
+                await container.wire_bot_async(self)
+                register_listeners()
+
+        self.bot = _Bot(command_prefix="!", intents=intents)
+        return self.bot
 
     async def sync_commands(self) -> None:
         assert self.bot is not None
         cfg = self.container.cfg
         logger = self.logger
         try:
-            target_guilds: Sequence[int] = list(cfg.DISCORD_GUILD_IDS or [])
-            if target_guilds:
-                present_ids = [gid for gid in target_guilds if self.bot.get_guild(gid) is not None]
-                missing_ids = [gid for gid in target_guilds if gid not in present_ids]
-
-                if missing_ids:
-                    logger.warning(
-                        (
-                            "Bot is not in guild(s) %s; skipping those. "
-                            "Use the invite URL to add the bot."
-                        ),
-                        missing_ids,
-                    )
-
-                if present_ids:
-                    # Skip if already synced these guilds in this process
-                    current = set(present_ids)
-                    if self._has_synced_once and current == self._last_present_ids:
-                        logger.info("Command sync up-to-date; skipping per-guild sync")
-                        return
-                    await self.bot.sync_commands(guild_ids=present_ids)
-                    logger.info("Synced commands to guilds %s", present_ids)
-                    try:
-                        names = sorted({c.name for c in (self.bot.application_commands or [])})
-                        logger.info(
-                            "Registered commands (per-guild, unique %s): %s",
-                            len(names),
-                            names,
-                        )
-                    except Exception as e:
-                        logger.debug("Could not list application commands: %s", e)
-                    self._last_present_ids = current
-                    self._has_synced_once = True
-                else:
-                    logger.info("No present target guilds; skipping per-guild sync")
-            else:
-                logger.info("No target guilds configured")
-
-            # Global sync disabled per simplification; commands are scoped to target guilds only.
+            # Global-only: commands are available in any guild and DMs.
+            did_global = await self._sync_global()
+            if not did_global:
+                logger.info("Command sync is up-to-date; no changes applied")
         except discord.Forbidden as e:
             logger.error(
                 (
@@ -101,6 +74,22 @@ class BotOrchestrator:
         except discord.HTTPException as e:
             logger.exception("Failed to sync commands: %s", e)
             raise
+
+    # Per-guild sync removed: we rely on global commands only.
+
+    async def _sync_global(self) -> bool:
+        assert self.bot is not None
+        cfg = self.container.cfg
+        logger = self.logger
+        if not cfg.COMMANDS_SYNC_GLOBAL:
+            return False
+        if self._has_synced_global:
+            logger.info("Global command sync already performed in this process; skipping")
+            return False
+        await self.bot.tree.sync()
+        self._has_synced_global = True
+        logger.info("Performed global command sync (DMs enabled; propagation may take time)")
+        return True
 
     def register_listeners(self) -> None:
         assert self.bot is not None
@@ -135,22 +124,10 @@ class BotOrchestrator:
         async def on_guild_join(guild: discord.Guild) -> None:
             logger = logging.getLogger(__name__)
             logger.info("Joined guild %s (%s)", guild.id, guild.name)
-            try:
-                cfg = self.container.cfg
-                if cfg.DISCORD_GUILD_IDS and guild.id in cfg.DISCORD_GUILD_IDS:
-                    assert self.bot is not None
-                    await self.bot.sync_commands(guild_ids=[guild.id])
-                    logger.info("Synced commands to newly joined guild %s", guild.id)
-                else:
-                    logger.info(
-                        "Joined guild %s not in target list; skipping sync (no global fallback)",
-                        guild.id,
-                    )
-            except discord.HTTPException as e:
-                logger.exception("Failed to sync commands after joining guild %s: %s", guild.id, e)
+            # Global commands are sufficient; no per-guild sync needed.
 
         async def on_application_command_error(
-            ctx: discord.ApplicationContext, error: Exception
+            interaction: discord.Interaction, error: Exception
         ) -> None:
             # The cog-level handlers already take care of most user errors;
             # this is a final catch-all.
@@ -158,7 +135,14 @@ class BotOrchestrator:
             original = getattr(error, "original", error)
             logger.exception("Unhandled application command error: %s", original)
             with contextlib.suppress(Exception):
-                await ctx.respond("An error occurred. Please try again later.", ephemeral=True)
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred. Please try again later.", ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred. Please try again later.", ephemeral=True
+                    )
 
         # Register listeners (no decorators to keep type-checkers happy)
         self.bot.add_listener(on_ready)
@@ -166,6 +150,9 @@ class BotOrchestrator:
         self.bot.add_listener(on_resumed)
         self.bot.add_listener(on_guild_join)
         self.bot.add_listener(on_application_command_error)
+        # Expose for tests (avoid accessing internal listener tables)
+        self._on_ready_listener = on_ready
+        self._on_guild_join_listener = on_guild_join
 
     def _preflight_token_check(self) -> None:
         cfg = self.container.cfg
@@ -193,10 +180,7 @@ class BotOrchestrator:
     def run(self) -> None:
         # Build
         bot = self.build_bot()
-        # Wire cogs before login (no lazy loading)
-        self.container.wire_bot(bot)
-        # Register listeners
-        self.register_listeners()
+        # Cog wiring and listener registration handled in setup_hook
         # Validate and run
         self._preflight_token_check()
         bot.run(self.container.cfg.DISCORD_TOKEN)

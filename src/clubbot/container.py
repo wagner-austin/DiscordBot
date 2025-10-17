@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from discord.ext import commands
+
 from .config import Config, load_config, require_token
 from .services.metrics import NullMetricsService, SQLiteMetricsService
 from .services.qr_app import QRService
@@ -35,7 +37,7 @@ class ServiceContainer:
         return cls(cfg=cfg, qr_service=qr_service, metrics=metrics)
 
     # Bot wiring
-    def wire_bot(self, bot) -> None:  # type: ignore[no-untyped-def]
+    async def wire_bot_async(self, bot: commands.Bot) -> None:
         """Attach all cogs to the bot (idempotent)."""
         # Import locally to avoid import cycles at module import time
         from .cogs.qr import QRCog
@@ -44,5 +46,5 @@ class ServiceContainer:
 
         if bot.get_cog("QRCog") is None:
             # Keep metrics available for future internal use; only QRCog is exposed.
-            bot.add_cog(QRCog(bot, self.cfg, self.qr_service))
+            await bot.add_cog(QRCog(bot, self.cfg, self.qr_service))
             logger.info("Loaded cog: QRCog")
