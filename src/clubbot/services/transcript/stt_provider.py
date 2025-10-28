@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import contextlib
 import logging
@@ -52,8 +52,21 @@ class STTTranscriptProvider:
             max_retries=self.max_retries,
         )
 
-        # Track temporary cookies file (unused unless created elsewhere)
+        # Track temporary cookies file (used if cookies_text provided)
         self._temp_cookies_file: str | None = None
+        if self.cookies_text and not self.cookies_path:
+            import base64
+            import binascii
+
+            try:
+                decoded = base64.b64decode(self.cookies_text).decode("utf-8")
+                fd, path = tempfile.mkstemp(prefix="ytcookies_", suffix=".txt", text=True)
+                with os.fdopen(fd, "w") as f:
+                    f.write(decoded)
+                self._temp_cookies_file = path
+                self._logger.debug("Using cookies from TEXT (temp file): %s", path)
+            except (binascii.Error, UnicodeDecodeError, OSError) as e:
+                self._logger.warning("Failed to use TRANSCRIPT_COOKIES_TEXT: %s", e)
 
     def __del__(self) -> None:
         """Clean up temporary cookies file if created."""
