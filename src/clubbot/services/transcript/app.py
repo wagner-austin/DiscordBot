@@ -41,6 +41,21 @@ class TranscriptService:
                 max_retries=int(getattr(self.cfg, "TRANSCRIPT_STT_API_MAX_RETRIES", 2)),
                 cookies_text=getattr(self.cfg, "TRANSCRIPT_COOKIES_TEXT", None),
                 cookies_path=getattr(self.cfg, "TRANSCRIPT_COOKIES_PATH", None),
+                enable_chunking=bool(getattr(self.cfg, "TRANSCRIPT_ENABLE_CHUNKING", True)),
+                chunk_threshold_mb=float(getattr(self.cfg, "TRANSCRIPT_CHUNK_THRESHOLD_MB", 20.0)),
+                target_chunk_mb=float(getattr(self.cfg, "TRANSCRIPT_TARGET_CHUNK_MB", 20.0)),
+                max_chunk_duration=float(
+                    getattr(self.cfg, "TRANSCRIPT_MAX_CHUNK_DURATION_SECONDS", 600.0)
+                ),
+                max_concurrent_chunks=int(getattr(self.cfg, "TRANSCRIPT_MAX_CONCURRENT_CHUNKS", 3)),
+                silence_threshold_db=float(
+                    getattr(self.cfg, "TRANSCRIPT_SILENCE_THRESHOLD_DB", -40.0)
+                ),
+                silence_duration=float(
+                    getattr(self.cfg, "TRANSCRIPT_SILENCE_DURATION_SECONDS", 0.5)
+                ),
+                stt_rtf=float(getattr(self.cfg, "TRANSCRIPT_STT_RTF", 0.5)),
+                dl_mib_per_sec=float(getattr(self.cfg, "TRANSCRIPT_DL_MIB_PER_SEC", 4.0)),
             )
             object.__setattr__(self, "provider", stt)
         else:

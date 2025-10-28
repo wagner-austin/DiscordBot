@@ -4,24 +4,17 @@ import contextlib
 import logging
 import math
 import os
+import subprocess
 import tempfile
 from dataclasses import dataclass
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import BinaryIO, Literal, Protocol, runtime_checkable
 
 from ...utils.errors import UserInputError
+from .chunker import AudioChunker
+from .merger import TranscriptMerger
+from .parallel import ParallelTranscriber
 from .types import TranscriptOptions, TranscriptSegment
-
-
-class _WhisperSegment(TypedDict):
-    id: int
-    start: float
-    end: float
-    text: str
-
-
-class _WhisperVerbose(TypedDict):
-    text: str
-    segments: list[_WhisperSegment]
+from .whisper_parse import convert_verbose_to_segments
 
 
 @runtime_checkable
@@ -38,6 +31,17 @@ class STTTranscriptProvider:
     max_retries: int = 2
     cookies_text: str | None = None
     cookies_path: str | None = None
+    # Chunking configuration (disabled by default for backward-compat and tests)
+    enable_chunking: bool = False
+    chunk_threshold_mb: float = 20.0
+    target_chunk_mb: float = 20.0
+    max_chunk_duration: float = 600.0
+    max_concurrent_chunks: int = 3
+    silence_threshold_db: float = -40.0
+    silence_duration: float = 0.5
+    # Estimation parameters
+    stt_rtf: float = 0.5  # processing seconds per audio second
+    dl_mib_per_sec: float = 4.0  # approximate download throughput for audio
 
     def __post_init__(self) -> None:
         self._logger = logging.getLogger(__name__)
@@ -77,20 +81,42 @@ class STTTranscriptProvider:
 
     def fetch(self, video_id: str, opts: TranscriptOptions) -> list[TranscriptSegment]:
         url = f"https://www.youtube.com/watch?v={video_id}"
+        # 1) Probe and validate duration
+        duration = self._probe_or_error(video_id, url)
+        self._logger.info("Probe complete: duration=%ss", duration)
+
+        # 2) Download audio and get size
+        audio_path: str | None = None
+        try:
+            audio_path, size_bytes = self._download_or_error(url, video_id)
+
+            # 3) If size exceeds hard limit, handle via chunking or error
+            if self._is_over_limit(size_bytes):
+                return self._handle_over_limit(audio_path, size_bytes)
+
+            # 4) Otherwise choose strategy (maybe chunk) and transcribe
+            return self._transcribe_with_strategy(audio_path)
+        finally:
+            if audio_path:
+                with contextlib.suppress(Exception):
+                    os.remove(audio_path)
+
+    # --- Helpers to reduce fetch complexity ---
+
+    def _probe_or_error(self, video_id: str, url: str) -> int:
         try:
             self._logger.info("Probing video for STT: vid=%s url=%s", video_id, url)
             info = self._probe(url)
             duration = int(_as_float(info.get("duration", 0)))
-            self._logger.info("Probe complete: duration=%ss", duration)
             if self.max_video_seconds > 0 and duration and duration > self.max_video_seconds:
                 allowed_min = max(1, math.ceil(self.max_video_seconds / 60))
                 actual_min = max(1, math.ceil(duration / 60))
                 raise UserInputError(
-                    f"Video is too long for transcription (> {allowed_min} min). "
-                    f"Detected length: {actual_min} min."
+                    f"Video is too long for STT transcription ({actual_min} min). "
+                    f"Maximum allowed: {allowed_min} min."
                 )
+            return duration
         except UserInputError:
-            # Bubble up user-facing errors without wrapping
             raise
         except Exception as e:
             self._logger.exception(
@@ -98,50 +124,75 @@ class STTTranscriptProvider:
             )
             raise UserInputError("Failed to retrieve video information for transcription") from None
 
-        audio_path: str | None = None
+    def _download_or_error(self, url: str, video_id: str) -> tuple[str, int]:
         try:
+            self._logger.info("Starting audio download: vid=%s", video_id)
+            audio_path = self._download_audio(url)
             try:
-                self._logger.info("Starting audio download: vid=%s", video_id)
-                audio_path = self._download_audio(url)
-                try:
-                    stat = os.stat(audio_path)
-                    self._logger.info(
-                        "Audio downloaded: path=%s bytes=%s", audio_path, stat.st_size
-                    )
-                except OSError:
-                    self._logger.debug("Could not stat downloaded audio at %s", audio_path)
-            except Exception as e:
-                self._logger.exception(
-                    "Failed to download audio for STT: type=%s msg=%s",
-                    type(e).__name__,
-                    str(e),
-                )
-                raise UserInputError(
-                    "Could not download audio for transcription (unavailable or blocked)."
-                ) from None
+                stat = os.stat(audio_path)
+                self._logger.info("Audio downloaded: path=%s bytes=%s", audio_path, stat.st_size)
+            except OSError:
+                self._logger.debug("Could not stat downloaded audio at %s", audio_path)
+                stat = os.stat(audio_path)
+            return audio_path, stat.st_size
+        except Exception as e:
+            self._logger.exception(
+                "Failed to download audio for STT: type=%s msg=%s", type(e).__name__, str(e)
+            )
+            raise UserInputError(
+                "Could not download audio for transcription (unavailable or blocked)."
+            ) from None
 
-            stat = os.stat(audio_path)
-            max_bytes = self.max_file_mb * 1024 * 1024
-            if self.max_file_mb > 0 and stat.st_size > max_bytes:
-                raise UserInputError(
-                    f"Audio file exceeds {self.max_file_mb} MB limit for transcription."
-                )
+    def _is_over_limit(self, size_bytes: int) -> bool:
+        if self.max_file_mb <= 0:
+            return False
+        max_bytes = self.max_file_mb * 1024 * 1024
+        return size_bytes > max_bytes
+
+    def _handle_over_limit(self, audio_path: str, size_bytes: int) -> list[TranscriptSegment]:
+        actual_mb = size_bytes / (1024 * 1024)
+        if self.enable_chunking and self._ffmpeg_available():
+            self._logger.info(
+                "Audio size %.1fMB exceeds limit %.1fMB; chunking enabled",
+                actual_mb,
+                float(self.max_file_mb),
+            )
             try:
-                self._logger.info("Calling Whisper transcription: size_bytes=%s", stat.st_size)
-                result = self._transcribe(audio_path)
-                self._logger.info("Whisper transcription complete: segments=%s", len(result))
+                result = self._transcribe_chunked(audio_path)
+                self._logger.info(
+                    "Whisper transcription (chunked) complete: segments=%s", len(result)
+                )
                 return result
             except Exception as e:
                 self._logger.exception(
-                    "STT transcription error: type=%s msg=%s", type(e).__name__, str(e)
+                    "Chunked transcription failed: type=%s msg=%s", type(e).__name__, str(e)
                 )
-                raise UserInputError(
-                    "Transcription failed due to an API error. Please try again."
-                ) from None
-        finally:
-            if audio_path:
-                with contextlib.suppress(Exception):
-                    os.remove(audio_path)
+                raise UserInputError("Failed to process audio file. Please try again.") from None
+        raise UserInputError(
+            f"Audio file is too large for Whisper API ({actual_mb:.1f} MB). "
+            f"Maximum allowed: {self.max_file_mb} MB."
+        )
+
+    def _transcribe_with_strategy(self, audio_path: str) -> list[TranscriptSegment]:
+        try:
+            size_bytes = os.path.getsize(audio_path)
+        except OSError:
+            size_bytes = 0
+        self._logger.info("Calling Whisper transcription: size_bytes=%s", size_bytes)
+        try:
+            if self.enable_chunking and self._should_chunk(audio_path):
+                result = self._transcribe_chunked(audio_path)
+            else:
+                result = self._transcribe(audio_path)
+            self._logger.info("Whisper transcription complete: segments=%s", len(result))
+            return result
+        except Exception as e:
+            self._logger.exception(
+                "STT transcription error: type=%s msg=%s", type(e).__name__, str(e)
+            )
+            raise UserInputError(
+                "Transcription failed due to an API error. Please try again."
+            ) from None
 
     def _probe(self, url: str) -> dict[str, object]:
         import yt_dlp  # local import to avoid import-time dependency
@@ -207,19 +258,96 @@ class STTTranscriptProvider:
                 file=f,
                 response_format="verbose_json",
             )
+        return convert_verbose_to_segments(resp)
 
-        data = _to_verbose_dict(resp)
-        raw_segments = data["segments"]
-        out: list[TranscriptSegment] = []
-        for seg in raw_segments:
-            text = seg.get("text", "").strip()
-            if not text:
-                continue
-            start = _as_float(seg.get("start", 0.0))
-            end = _as_float(seg.get("end", start))
-            duration = max(0.0, end - start)
-            out.append(TranscriptSegment(text=text, start=start, duration=duration))
-        return out
+    # --- Chunking helpers ---
+
+    def _ffmpeg_available(self) -> bool:
+        from shutil import which
+
+        return bool(which("ffmpeg") and which("ffprobe"))
+
+    def _should_chunk(self, audio_path: str) -> bool:
+        if not self.enable_chunking:
+            return False
+        try:
+            size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+        except OSError:
+            return False
+        return size_mb > float(self.chunk_threshold_mb)
+
+    def _get_audio_duration(self, audio_path: str) -> float:
+        import json
+
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            audio_path,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            data = json.loads(result.stdout or "{}")
+            return float(data.get("format", {}).get("duration", 0.0))
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            # Fallback to 0 if ffprobe missing or errors
+            return 0.0
+
+    def _transcribe_chunked(self, audio_path: str) -> list[TranscriptSegment]:
+        if not self._ffmpeg_available():
+            raise UserInputError("ffmpeg/ffprobe not available; cannot chunk audio")
+        # 1) Duration + size
+        duration = self._get_audio_duration(audio_path)
+        size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+        # 2) Chunk audio
+        chunker = AudioChunker(
+            target_chunk_mb=float(self.target_chunk_mb),
+            max_chunk_duration_seconds=float(self.max_chunk_duration),
+            silence_threshold_db=float(self.silence_threshold_db),
+            silence_duration_seconds=float(self.silence_duration),
+            logger=self._logger,
+        )
+        chunks = chunker.chunk_audio(audio_path, duration, size_mb)
+        # If single passthrough chunk, use default path
+        if len(chunks) == 1 and os.path.abspath(chunks[0].path) == os.path.abspath(audio_path):
+            return self._transcribe(audio_path)
+
+        # 3) Transcribe chunks concurrently
+        def _do_transcribe(
+            *,
+            model: str,
+            file: BinaryIO,
+            response_format: Literal["verbose_json"],
+            timeout: float | None = None,
+        ) -> object:
+            return self._client.audio.transcriptions.create(
+                model=model,
+                file=file,
+                response_format=response_format,
+                timeout=timeout,
+            )
+
+        transcriber = ParallelTranscriber(
+            transcribe=_do_transcribe,
+            max_concurrent=int(self.max_concurrent_chunks),
+            max_retries=int(self.max_retries),
+            timeout_seconds=float(self.timeout_seconds),
+            logger=self._logger,
+        )
+        try:
+            results = transcriber.transcribe_chunks(chunks)
+            merger = TranscriptMerger()
+            return merger.merge(list(zip(chunks, results, strict=False)))
+        finally:
+            # Clean up chunk files (not the original)
+            for c in chunks:
+                if os.path.abspath(c.path) != os.path.abspath(audio_path):
+                    with contextlib.suppress(Exception):
+                        os.remove(c.path)
 
     def estimate(self, url: str) -> tuple[int, float]:
         """Return (duration_seconds, approx_audio_size_mb) before download.
@@ -258,6 +386,35 @@ class STTTranscriptProvider:
             approx_mb = (best_abr * 1000.0 / 8.0) * duration / (1024 * 1024)
         return max(0, duration), max(0.0, approx_mb)
 
+    def estimate_eta_minutes(self, duration_seconds: int, approx_size_mb: float) -> int:
+        """Estimate total minutes to process given duration/size.
+
+        Models download time and STT processing time. If chunking is likely, accounts
+        for concurrency and chunk-duration limits to reduce wall-clock estimate.
+        """
+        dur_s = max(0, int(duration_seconds))
+        size_mb = max(0.0, float(approx_size_mb))
+        # Download estimate (MiB/s)
+        dl_time_min = (size_mb / self.dl_mib_per_sec) if self.dl_mib_per_sec > 0 else 0.0
+        # Processing estimate
+        will_chunk = (
+            self.enable_chunking
+            and (size_mb > float(self.chunk_threshold_mb) or size_mb > float(self.max_file_mb))
+            and self._ffmpeg_available()
+        )
+        if not will_chunk or dur_s == 0:
+            proc_min = (dur_s * float(self.stt_rtf)) / 60.0
+        else:
+            # Number of chunks by size and by max duration
+            n_by_size = int(math.ceil(max(1e-6, size_mb) / float(self.target_chunk_mb)))
+            n_by_dur = int(math.ceil(max(1e-6, dur_s) / float(self.max_chunk_duration)))
+            n_chunks = max(1, max(n_by_size, n_by_dur))
+            # Effective parallelism limited by configured concurrency and number of chunks
+            parallel = max(1, min(int(self.max_concurrent_chunks), n_chunks))
+            # Total processing time ~ total audio seconds divided by parallel workers, scaled by rtf
+            proc_min = ((dur_s / parallel) * float(self.stt_rtf)) / 60.0
+        return max(1, int(proc_min + dl_time_min + 0.5))
+
 
 def _as_float(val: object) -> float:
     if isinstance(val, int | float):
@@ -270,35 +427,4 @@ def _as_float(val: object) -> float:
     return 0.0
 
 
-def _to_verbose_dict(obj: object) -> _WhisperVerbose:
-    data: dict[str, object] | None = None
-    # Try common model-to-dict methods
-    for meth in ("to_dict_recursive", "to_dict", "model_dump"):
-        f = getattr(obj, meth, None)
-        if callable(f):
-            # Suppress any vendor-specific conversion errors and try next
-            with contextlib.suppress(Exception):
-                result = f()
-                if isinstance(result, dict):
-                    data = result
-                    break
-    if data is None and isinstance(obj, dict):
-        data = obj
-    if data is None:
-        return {"text": "", "segments": []}
-
-    text = str(data.get("text", ""))
-    segs_raw = data.get("segments")
-    segs: list[_WhisperSegment] = []
-    if isinstance(segs_raw, list):
-        for item in segs_raw:
-            if not isinstance(item, dict):
-                continue
-            seg_text = str(item.get("text", ""))
-            start = _as_float(item.get("start", 0.0))
-            end = _as_float(item.get("end", start))
-            # id is optional; coerce to int index if missing
-            raw_id = item.get("id", None)
-            seg_id = int(_as_float(raw_id)) if raw_id is not None else len(segs)
-            segs.append({"id": seg_id, "start": start, "end": end, "text": seg_text})
-    return {"text": text, "segments": segs}
+# No legacy shims retained; parsing handled by whisper_parse.convert_verbose_to_segments
