@@ -42,7 +42,6 @@ env:
 	@echo "Required: DISCORD_TOKEN"
 	@echo "Optional (recommended for dev): DISCORD_GUILD_ID or DISCORD_GUILD_IDS"
 	@echo "Optional (for invite URL): DISCORD_APPLICATION_ID, DISCORD_PERMISSIONS"
-	@echo "Config file (preferred overrides): clubbot.toml (optional overrides)"
 	@echo "  - TRANSCRIPT_PROVIDER = stt|youtube"
 	@echo "  - OPENAI_API_KEY (for STT)"
 	@echo "  - TRANSCRIPT_MAX_VIDEO_MINUTES or TRANSCRIPT_MAX_VIDEO_SECONDS"
@@ -72,4 +71,5 @@ check: install-dev
 	poetry run ruff format .
 	poetry run mypy
 	poetry run pytest -q
+
 
