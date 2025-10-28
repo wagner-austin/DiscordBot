@@ -37,8 +37,14 @@ class TranscriptService:
                 api_key=api_key,
                 max_video_seconds=self.cfg.TRANSCRIPT_MAX_VIDEO_SECONDS,
                 max_file_mb=self.cfg.TRANSCRIPT_MAX_FILE_MB,
-                timeout_seconds=float(getattr(self.cfg, "TRANSCRIPT_STT_API_TIMEOUT_SECONDS", 900)),
-                max_retries=int(getattr(self.cfg, "TRANSCRIPT_STT_API_MAX_RETRIES", 2)),
+                timeout_seconds=float(
+                    getattr(self.cfg, "TRANSCRIPT_STT_API_TIMEOUT_SECONDS", 900)
+                ),
+                max_retries=int(
+                    getattr(self.cfg, "TRANSCRIPT_STT_API_MAX_RETRIES", 2)
+                ),
+                cookies_text=getattr(self.cfg, "TRANSCRIPT_COOKIES_TEXT", None),
+                cookies_path=getattr(self.cfg, "TRANSCRIPT_COOKIES_PATH", None),
             )
             object.__setattr__(self, "provider", stt)
         else:

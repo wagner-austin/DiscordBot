@@ -46,6 +46,8 @@ class Config:
     TRANSCRIPT_DL_MIB_PER_SEC: float = 4.0
     TRANSCRIPT_STT_API_TIMEOUT_SECONDS: int = 900
     TRANSCRIPT_STT_API_MAX_RETRIES: int = 2
+    TRANSCRIPT_COOKIES_TEXT: str | None = None
+    TRANSCRIPT_COOKIES_PATH: str | None = None
 
 
 def _parse_guilds() -> tuple[str | None, list[int]]:
@@ -247,6 +249,16 @@ def load_config() -> Config:
             file_overrides,
             "TRANSCRIPT_STT_API_MAX_RETRIES",
             _i("TRANSCRIPT_STT_API_MAX_RETRIES", 2),
+        ),
+        TRANSCRIPT_COOKIES_TEXT=(
+            str(file_overrides.get("TRANSCRIPT_COOKIES_TEXT") or "").strip()
+            or (os.getenv("TRANSCRIPT_COOKIES_TEXT") or "").strip()
+            or None
+        ),
+        TRANSCRIPT_COOKIES_PATH=(
+            str(file_overrides.get("TRANSCRIPT_COOKIES_PATH") or "").strip()
+            or (os.getenv("TRANSCRIPT_COOKIES_PATH") or "").strip()
+            or None
         ),
     )
 

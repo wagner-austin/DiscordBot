@@ -36,6 +36,8 @@ class STTTranscriptProvider:
     max_file_mb: int
     timeout_seconds: float = 900.0
     max_retries: int = 2
+    cookies_text: str | None = None
+    cookies_path: str | None = None
 
     def __post_init__(self) -> None:
         self._logger = logging.getLogger(__name__)
@@ -125,7 +127,14 @@ class STTTranscriptProvider:
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "cachedir": False,
         }
+        if self.cookies_path:
+            ydl_opts["cookiefile"] = self.cookies_path
+        if self.cookies_text:
+            ydl_opts.setdefault("http_headers", {})
+            assert isinstance(ydl_opts["http_headers"], dict)
+            ydl_opts["http_headers"]["Cookie"] = self.cookies_text
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_obj = ydl.extract_info(url, download=False)
             if not isinstance(info_obj, dict):
@@ -148,7 +157,14 @@ class STTTranscriptProvider:
             "overwrites": True,
             # no postprocessors -> avoid requiring ffmpeg when possible
             "postprocessors": [],
+            "cachedir": False,
         }
+        if self.cookies_path:
+            ydl_opts["cookiefile"] = self.cookies_path
+        if self.cookies_text:
+            ydl_opts.setdefault("http_headers", {})
+            assert isinstance(ydl_opts["http_headers"], dict)
+            ydl_opts["http_headers"]["Cookie"] = self.cookies_text
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             # Prefer requested_downloads filepath if present

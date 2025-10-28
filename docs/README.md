@@ -1,4 +1,4 @@
-# Discord Club Bot LVP
+﻿# Discord Club Bot LVP
 
 Least-viable product: a modular Python bot that provides a `/qrcode` slash command returning a PNG. Built with Poetry and discord.py (app commands).
 
@@ -18,7 +18,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
   - Fetches captions when available (default provider = `youtube`).
   - Optional STT provider (`TRANSCRIPT_PROVIDER=stt`) downloads audio and transcribes it.
   - Preflight checks (STT): blocks jobs exceeding configured duration/size before queueing.
-  - Background jobs: user is DM’d on success or any failure (no silent waits).
+  - Background jobs: user is DMâ€™d on success or any failure (no silent waits).
 
 ## Prerequisites
 - Python 3.11+
@@ -29,7 +29,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
 ## Setup
 1. Copy `.env.example` to `.env` and fill in values (at least `DISCORD_TOKEN`).
 2. Install deps: `poetry install`
-3. One-time global sync (first run only): set `COMMANDS_SYNC_ON_START=true` in `.env`, then run `make run`. After you see “Performed global command sync”, set it back to `false`.
+3. One-time global sync (first run only): set `COMMANDS_SYNC_ON_START=true` in `.env`, then run `make run`. After you see â€œPerformed global command syncâ€, set it back to `false`.
 4. Invite the bot to a server:
    - Developer Portal > OAuth2 > URL Generator
    - Scopes: `bot`, `applications.commands`
@@ -52,7 +52,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
   - Follow `docs/Background-Jobs.md`.
   - Define a dataclass job implementing `JobBase` (fields: `request_id`, `user_id`).
   - Build a `JobRunner` with `failure_notifier_factory(self.notify_user, service_name=...)` and `default_retry_policy_factory(UserInputError)`.
-  - Start the runner in the cog’s `__init__` and enqueue jobs when appropriate.
+  - Start the runner in the cogâ€™s `__init__` and enqueue jobs when appropriate.
 
 - Sync/verify commands
   - Set `COMMANDS_SYNC_ON_START=true` and run `make run`; after the sync message appears, set back to `false`.
@@ -104,7 +104,7 @@ src/clubbot/
 - Environment:
   - `METRICS_ENABLED` (default `true`)
   - `METRICS_SQLITE_PATH` (default `data/metrics.sqlite`)
-  - `METRICS_REDACT_QUERY` (default `true`) — removes query string from stored normalized URLs
+  - `METRICS_REDACT_QUERY` (default `true`) â€” removes query string from stored normalized URLs
   - `QR_STATS_OFFICER_ROLE` (default `officers`)
   - `QR_STATS_DEFAULT_WINDOW` (default `7d`)
   - `QR_STATS_ADMIN_USER_IDS` (comma/space separated user IDs; allowed to use `/qrstats` in DMs)
@@ -118,7 +118,7 @@ src/clubbot/
   - `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS` (no per-guild copies are created by default; globals cover all guilds)
   - `BOT_INSTANCE_ID` to set a stable id across restarts/containers (otherwise auto-derived)
 - QR defaults (brand/styling)
-  - `QR_DEFAULT_ERROR_CORRECTION` (L, M, Q, H — default M)
+  - `QR_DEFAULT_ERROR_CORRECTION` (L, M, Q, H â€” default M)
   - `QR_DEFAULT_BOX_SIZE` (default 10)
   - `QR_DEFAULT_BORDER` (default 1)
   - `QR_DEFAULT_FILL_COLOR` (default `#000000`)
@@ -126,19 +126,17 @@ src/clubbot/
 - Rate limiting (per-user)
   - `QRCODE_RATE_LIMIT` (default 1)
   - `QRCODE_RATE_WINDOW_SECONDS` (default 1)
-  - `QR_PUBLIC_RESPONSES` (default `true`) — set to `false` to make success responses ephemeral
+  - `QR_PUBLIC_RESPONSES` (default `true`) â€” set to `false` to make success responses ephemeral
 
 - Transcript
   - `TRANSCRIPT_PROVIDER` (default `youtube`; set `stt` to enable speech-to-text)
   - `OPENAI_API_KEY` (required if `TRANSCRIPT_PROVIDER=stt`)
   - `TRANSCRIPT_PREFERRED_LANGS` (default `en,en-US,en-GB`)
-  - `TRANSCRIPT_MAX_VIDEO_SECONDS` (default `5400`) — max duration for STT
-  - `TRANSCRIPT_MAX_FILE_MB` (default `25`) — max audio size for STT
-  - `TRANSCRIPT_PUBLIC_RESPONSES` (default `false`) — transcript attachments can be ephemeral or public
-
-Behavior
+  - `TRANSCRIPT_MAX_VIDEO_SECONDS` (default `5400`) â€” max duration for STT
+  - `TRANSCRIPT_MAX_FILE_MB` (default `25`) â€” max audio size for STT
+  - `TRANSCRIPT_PUBLIC_RESPONSES` (default `false`) â€” transcript attachments can be ephemeral or public`n  - `TRANSCRIPT_STT_API_TIMEOUT_SECONDS` (default `900`) - Whisper API timeout`n  - `TRANSCRIPT_STT_API_MAX_RETRIES` (default `2`) - Whisper API retries`n  - `TRANSCRIPT_STT_RTF` (default `0.5`) - seconds of processing per audio second (ETA)`n  - `TRANSCRIPT_DL_MIB_PER_SEC` (default `4.0`) - download speed for ETA (MiB/min)`n  - `TRANSCRIPT_COOKIES_TEXT` - optional Cookie header for YouTube (STT)`n  - `TRANSCRIPT_COOKIES_PATH` - optional cookies.txt path for YouTube (STT)`n`nBehavior
 - Validation happens before rate limiting so users always see clear input errors rather than generic cooldown messages.
-- The command defers immediately (ACK first) to avoid Discord’s 3s timeout; work runs after the ACK.
+- The command defers immediately (ACK first) to avoid Discordâ€™s 3s timeout; work runs after the ACK.
 
 ## Linting & Formatting
 - Lint: `make lint` (ruff check)
@@ -156,8 +154,8 @@ Behavior
 ### Background Jobs (Typed, Reusable)
 - Define a job dataclass implementing `JobBase` (fields: `request_id: str`, `user_id: int`).
 - Use `JobRunner` with typed hooks:
-  - `failure_callback(job, exc, attempt, will_retry)` — see `services/jobs/helpers.py` to DM users on failures.
-  - `retry_policy(job, exc, attempt) -> bool` — use `default_retry_policy_factory` to skip retries for user errors.
+  - `failure_callback(job, exc, attempt, will_retry)` â€” see `services/jobs/helpers.py` to DM users on failures.
+  - `retry_policy(job, exc, attempt) -> bool` â€” use `default_retry_policy_factory` to skip retries for user errors.
 - Queues: `MemoryJobQueue[JobBase]` or `UpstashJobQueue` via `build_queue()`.
 - Base DM helpers: `BaseCog.notify_user(...)` and `BaseCog.dm_file(...)` for consistent user messaging.
 
@@ -171,6 +169,7 @@ Correlation header for outbound HTTP:
 - `H` (High): ~30% restored. Most robust (e.g., logos/occlusion), largest code.
 
 Note: Default border (quiet zone) is set to 2 modules for compact codes. The QR spec recommends 4 for maximum scanner compatibility; increase via `QR_DEFAULT_BORDER` if needed.
+
 
 
 
