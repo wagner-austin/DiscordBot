@@ -3,7 +3,6 @@ import contextlib
 import logging
 import time
 from io import BytesIO
-from typing import Any, cast
 
 import discord
 from discord import app_commands
@@ -11,8 +10,8 @@ from discord.ext import commands
 
 from ..config import Config, load_config
 from ..logging import set_request_id
-from ..services.qr_app import QRService
-from ..services.qr_logic import build_effective_qr_options
+from ..services.qr_app import QRResult, QRService
+from ..services.qr_logic import QROptions, build_effective_qr_options
 from ..utils.errors import UserInputError
 from ..utils.rate_limiter import RateLimiter
 from .base import BaseCog
@@ -40,7 +39,12 @@ class QRCog(BaseCog):
         req_id = self.new_request_id()
         set_request_id(req_id)
         log = self.request_logger(req_id)
-        user_id: int = cast(int, getattr(interaction.user, "id", None))
+        user_id = self._extract_int_attr(interaction.user, "id")
+        if user_id is None:
+            await self.handle_user_error(
+                interaction, log, "Could not determine your user id for rate limiting"
+            )
+            return
         log.debug("QR command invoked by user=%s for url=%s", user_id, url[:50])
 
         await self._process_qr(interaction, url, user_id, log)
@@ -118,13 +122,15 @@ class QRCog(BaseCog):
         )
         log.info("QR code sent successfully for url=%s", result.url[:50])
 
-    async def _generate_qr_image(self, opts: Any) -> Any:
-        if hasattr(self.qr_service, "generate_qr_with_options"):
-            return await asyncio.to_thread(self.qr_service.generate_qr_with_options, opts)
-        gen = getattr(self.qr_service, "generate_qr", None)
-        if callable(gen):
-            return await asyncio.to_thread(gen, opts.url)
-        raise RuntimeError("QR service missing generate method")
+    @staticmethod
+    def _extract_int_attr(obj: object | None, name: str) -> int | None:
+        if obj is None:
+            return None
+        value = getattr(obj, name, None)
+        return value if isinstance(value, int) else None
+
+    async def _generate_qr_image(self, opts: QROptions) -> QRResult:
+        return await asyncio.to_thread(self.qr_service.generate_qr_with_options, opts)
 
 
 async def setup(bot: commands.Bot) -> None:
