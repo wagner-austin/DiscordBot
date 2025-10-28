@@ -59,6 +59,3 @@ class TranscriptService:
     # (exercised in tests)
     def _set_provider_for_tests(self, provider: TranscriptProvider) -> None:  # pragma: no cover
         object.__setattr__(self, "provider", provider)
-
-
-
