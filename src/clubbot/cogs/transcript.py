@@ -134,9 +134,29 @@ class TranscriptCog(BaseCog):
         # Always send as attachment to avoid spammy inline posts
         fname = f"transcript_{result.video_id}.txt"
         data = result.text.encode("utf-8")
+        # Enforce attachment size limit
+        if self._is_attachment_too_large(data):
+            await self.handle_user_error(
+                interaction,
+                log,
+                (
+                    f"Transcript is too large to attach (> {self._get_attachment_limit_mb()} MB). "
+                    "Please try a shorter video."
+                ),
+            )
+            return
         file = discord.File(fp=io.BytesIO(data), filename=fname)
         await interaction.followup.send(content=header, file=file, ephemeral=not public)
         log.info("Transcript sent successfully for vid=%s", result.video_id)
+
+    def _get_attachment_limit_mb(self) -> int:
+        """Return the configured attachment size limit in MB (default 25)."""
+        return int(getattr(self.config, "TRANSCRIPT_MAX_ATTACHMENT_MB", 25))
+
+    def _is_attachment_too_large(self, data: bytes) -> bool:
+        """True if payload exceeds the configured attachment limit."""
+        limit_mb = self._get_attachment_limit_mb()
+        return limit_mb > 0 and len(data) > limit_mb * 1024 * 1024
 
     async def _handle_stt_request(
         self,
@@ -169,23 +189,18 @@ class TranscriptCog(BaseCog):
             return True
 
         max_mb = float(getattr(self.config, "TRANSCRIPT_MAX_FILE_MB", 0))
+        # Do not block preflight purely on an estimate; enforce real size after download.
         if approx_mb and max_mb > 0 and approx_mb > max_mb:
-            await self.handle_user_error(
-                interaction,
-                log,
-                (
-                    f"Audio file exceeds {int(max_mb)} MB limit for transcription "
-                    f"(estimated ~{int(approx_mb)} MB)."
-                ),
-            )
-            return True
+            pass
 
         # Queue the job
         await self._queue.enqueue(
             TranscriptJob(request_id=req_id, url=url, user_id=user_id, queued_ts=time.time())
         )
         est_min = max(1, int((dur_s + 59) // 60)) if dur_s else "?"
-        size_txt = f"~{int(approx_mb)} MB" if approx_mb else "unknown size"
+        # Estimate transcript size (KB)
+        kbpm = float(getattr(self.config, "TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN", 1.0))
+        est_kb = int((est_min if isinstance(est_min, int) else 0) * kbpm) if est_min != "?" else 0
         # Estimate processing time (excludes queue delays)
         eta_min: str | int = "?"
         if dur_s:
@@ -194,13 +209,10 @@ class TranscriptCog(BaseCog):
             dl_min = (approx_mb / dl_rate) if approx_mb else 0.0
             proc_min = (dur_s * rtf) / 60.0
             eta_min = max(1, int(proc_min + dl_min + 0.5))
-        note = ""
-        if not approx_mb and max_mb > 0:
-            note = f" Note: size unknown; may exceed {int(max_mb)} MB limit."
         await interaction.followup.send(
             (
-                f"Queued transcription for <{url}> (Length {est_min} min, {size_txt}; "
-                f"ETA ~{eta_min} min).{note}\n"
+                f"Queued transcription for <{url}> (Length {est_min} min; "
+                f"Estimated transcript ~{est_kb if est_kb else '?'} KB; ETA ~{eta_min} min).\n"
                 f"We'll DM you when it's ready. Request: {req_id}"
             ),
             ephemeral=not getattr(self.config, "TRANSCRIPT_PUBLIC_RESPONSES", False),
@@ -212,9 +224,6 @@ class TranscriptCog(BaseCog):
         start = time.perf_counter()
         res = await asyncio.to_thread(self.transcript_service.fetch_cleaned, job.url)
         elapsed_s = max(0.0, time.perf_counter() - start)
-        mins = int(elapsed_s // 60)
-        secs = int(elapsed_s % 60)
-        eta_txt = f"~{mins} min {secs}s" if mins > 0 else f"~{secs}s"
         # End-to-end time (including queue wait) if available
         e2e_s = 0.0
         if isinstance(job.queued_ts, float) and job.queued_ts > 0.0:
@@ -224,8 +233,19 @@ class TranscriptCog(BaseCog):
         e2e_txt = f"~{e2e_m} min {e2e_sec}s" if e2e_s > 0 else "~?s"
 
         header = f"Transcript for <{res.url}> (req={job.request_id})"
-        content = f"{header}\nProcessing time {eta_txt}; total {e2e_txt}"
+        content = f"{header}\nTotal time {e2e_txt}"
         data = res.text.encode("utf-8")
+        # Enforce attachment size limit before DM
+        if self._is_attachment_too_large(data):
+            limit = self._get_attachment_limit_mb()
+            await self.notify_user(
+                job.user_id,
+                (
+                    f"Transcript is too large to attach (> {limit} MB) "
+                    f"(req={job.request_id}). Please try a shorter video."
+                ),
+            )
+            return
         file = discord.File(fp=io.BytesIO(data), filename=f"transcript_{res.video_id}.txt")
         await self.dm_file(job.user_id, content, file)
         logging.getLogger(__name__).info(
