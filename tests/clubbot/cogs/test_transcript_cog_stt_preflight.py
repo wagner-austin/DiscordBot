@@ -136,12 +136,12 @@ async def test_stt_preflight_blocks_too_large() -> None:
     finally:
         await cog._runner.stop()
 
-    # We now warn and queue rather than blocking on estimates
-    assert interaction.calls, "Expected a queued message"
+    # Should block on estimated size exceeding Whisper API limit
+    assert interaction.calls, "Expected an error message"
     last = interaction.calls[-1]
     assert isinstance(last.get("message"), str)
     msg = last["message"].lower()
-    assert "queued transcription for <" in msg
-    assert "estimated transcript" in msg
-    # With public responses enabled in test cfg, this is not ephemeral
-    assert last["ephemeral"] is False
+    assert "whisper api" in msg or "audio file" in msg
+    assert "48 mb" in msg or "25 mb" in msg
+    # Error messages are ephemeral
+    assert last["ephemeral"] is True

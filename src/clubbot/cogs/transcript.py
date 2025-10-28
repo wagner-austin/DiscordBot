@@ -182,16 +182,33 @@ class TranscriptCog(BaseCog):
                 interaction,
                 log,
                 (
-                    "Video is too long for transcription (> "
-                    f"{allowed_min} min). Detected length: {actual_min} min."
+                    f"Video is too long for STT transcription ({actual_min} min). "
+                    f"Maximum allowed: {allowed_min} min."
                 ),
             )
             return True
 
         max_mb = float(getattr(self.config, "TRANSCRIPT_MAX_FILE_MB", 0))
-        # Do not block preflight purely on an estimate; enforce real size after download.
+        chunking_enabled = bool(getattr(self.config, "TRANSCRIPT_ENABLE_CHUNKING", True))
         if approx_mb and max_mb > 0 and approx_mb > max_mb:
-            pass
+            can_chunk = False
+            if chunking_enabled:
+                try:
+                    from shutil import which  # local import to avoid global dependency
+
+                    can_chunk = bool(which("ffmpeg") and which("ffprobe"))
+                except Exception:
+                    can_chunk = False
+            if not can_chunk:
+                await self.handle_user_error(
+                    interaction,
+                    log,
+                    (
+                        f"Audio file is estimated at ~{int(approx_mb)} MB, which exceeds "
+                        f"Whisper API's {int(max_mb)} MB limit. Try a shorter video."
+                    ),
+                )
+                return True
 
         # Queue the job
         await self._queue.enqueue(
@@ -204,11 +221,18 @@ class TranscriptCog(BaseCog):
         # Estimate processing time (excludes queue delays)
         eta_min: str | int = "?"
         if dur_s:
-            rtf = float(getattr(self.config, "TRANSCRIPT_STT_RTF", 0.5))
-            dl_rate = float(getattr(self.config, "TRANSCRIPT_DL_MIB_PER_SEC", 4.0))
-            dl_min = (approx_mb / dl_rate) if approx_mb else 0.0
-            proc_min = (dur_s * rtf) / 60.0
-            eta_min = max(1, int(proc_min + dl_min + 0.5))
+            # If provider supports refined ETA, use it; otherwise fallback to simple model
+            prov_obj = self.transcript_service.provider
+            from ..services.transcript.stt_provider import STTTranscriptProvider
+
+            if isinstance(prov_obj, STTTranscriptProvider):
+                eta_min = prov_obj.estimate_eta_minutes(dur_s, float(approx_mb))
+            else:
+                rtf = float(getattr(self.config, "TRANSCRIPT_STT_RTF", 0.5))
+                dl_rate = float(getattr(self.config, "TRANSCRIPT_DL_MIB_PER_SEC", 4.0))
+                dl_min = (approx_mb / dl_rate) if approx_mb else 0.0
+                proc_min = (dur_s * rtf) / 60.0
+                eta_min = max(1, int(proc_min + dl_min + 0.5))
         await interaction.followup.send(
             (
                 f"Queued transcription for <{url}> (Length {est_min} min; "
