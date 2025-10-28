@@ -1,4 +1,4 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -19,4 +19,7 @@ poetry.lock
 
 # macOS
 .DS_Store
+
+
+.claude/
 
