@@ -59,6 +59,29 @@ def main() -> int:
                 _warn("health: ffmpeg check failed")
                 ok = False
 
+    # Upstash Redis REST (optional)
+    upstash_url = (os.getenv("UPSTASH_REDIS_REST_URL") or "").strip()
+    upstash_token = (os.getenv("UPSTASH_REDIS_REST_TOKEN") or "").strip()
+    if upstash_url and upstash_token:
+        try:
+            import httpx  # type: ignore
+
+            with httpx.Client(timeout=5.0) as client:
+                r = client.get(
+                    upstash_url.rstrip("/") + "/ping",
+                    headers={"Authorization": f"Bearer {upstash_token}"},
+                )
+                if r.status_code == 200:
+                    _ok("health: Upstash REST reachable")
+                else:
+                    _warn(f"health: Upstash REST returned {r.status_code}: {r.text[:120]}")
+                    ok = False
+        except Exception as e:
+            _warn(f"health: Upstash REST check failed: {e}")
+            ok = False
+    else:
+        _warn("health: Upstash not configured (using memory queue)")
+
     return 0 if ok else 1
 
 
