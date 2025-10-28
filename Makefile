@@ -11,6 +11,9 @@ help:
 	@echo "  make env       - Show required env vars"
 	@echo "  make validate-transcript URL=<youtube-url>  - Fetch + clean transcript via provider"
 	@echo "  make upstash-health  - Probe Upstash REST credentials and pipeline"
+	@echo "  make start     - Build + start Docker Compose stack (PowerShell)"
+	@echo "  make stop      - Stop Docker Compose stack (PowerShell)"
+	@echo "  make clean     - Stop, prune, rebuild stack from scratch (PowerShell)"
 
 install:
 	poetry lock
@@ -71,5 +74,14 @@ check: install-dev
 	poetry run ruff format .
 	poetry run mypy
 	poetry run pytest -q
+
+start:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/docker-start.ps1
+
+stop:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/docker-stop.ps1
+
+clean:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/docker-clean.ps1
 
 
