@@ -15,6 +15,20 @@ class TranscriptSegment:
 
 
 @dataclass(frozen=True)
+class AudioChunk:
+    """Represents a physical audio file chunk and its time window in the source."""
+
+    path: str
+    start_seconds: float
+    duration_seconds: float
+    size_bytes: int
+
+
+# Alias for readability in signatures
+TranscriptSegmentList = list[TranscriptSegment]
+
+
+@dataclass(frozen=True)
 class TranscriptOptions:
     preferred_langs: list[str]
 
