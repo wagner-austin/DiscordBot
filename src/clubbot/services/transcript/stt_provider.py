@@ -52,6 +52,16 @@ class STTTranscriptProvider:
             max_retries=self.max_retries,
         )
 
+        # Track temporary cookies file (unused unless created elsewhere)
+        self._temp_cookies_file: str | None = None
+
+    def __del__(self) -> None:
+        """Clean up temporary cookies file if created."""
+        path = getattr(self, "_temp_cookies_file", None)
+        if path:
+            with contextlib.suppress(Exception):
+                os.remove(path)
+
     def fetch(self, video_id: str, opts: TranscriptOptions) -> list[TranscriptSegment]:
         url = f"https://www.youtube.com/watch?v={video_id}"
         try:
@@ -129,12 +139,10 @@ class STTTranscriptProvider:
             "skip_download": True,
             "cachedir": False,
         }
-        if self.cookies_path:
-            ydl_opts["cookiefile"] = self.cookies_path
-        if self.cookies_text:
-            ydl_opts.setdefault("http_headers", {})
-            assert isinstance(ydl_opts["http_headers"], dict)
-            ydl_opts["http_headers"]["Cookie"] = self.cookies_text
+        # Use cookies_path if provided, otherwise use temp file from cookies_text
+        cookies_file = self.cookies_path or self._temp_cookies_file
+        if cookies_file:
+            ydl_opts["cookiefile"] = cookies_file
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_obj = ydl.extract_info(url, download=False)
             if not isinstance(info_obj, dict):
@@ -159,12 +167,10 @@ class STTTranscriptProvider:
             "postprocessors": [],
             "cachedir": False,
         }
-        if self.cookies_path:
-            ydl_opts["cookiefile"] = self.cookies_path
-        if self.cookies_text:
-            ydl_opts.setdefault("http_headers", {})
-            assert isinstance(ydl_opts["http_headers"], dict)
-            ydl_opts["http_headers"]["Cookie"] = self.cookies_text
+        # Use cookies_path if provided, otherwise use temp file from cookies_text
+        cookies_file = self.cookies_path or self._temp_cookies_file
+        if cookies_file:
+            ydl_opts["cookiefile"] = cookies_file
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             # Prefer requested_downloads filepath if present
@@ -283,3 +289,4 @@ def _to_verbose_dict(obj: object) -> _WhisperVerbose:
             seg_id = int(_as_float(raw_id)) if raw_id is not None else len(segs)
             segs.append({"id": seg_id, "start": start, "end": end, "text": seg_text})
     return {"text": text, "segments": segs}
+
