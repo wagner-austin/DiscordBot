@@ -48,6 +48,9 @@ class Config:
     TRANSCRIPT_STT_API_MAX_RETRIES: int = 2
     TRANSCRIPT_COOKIES_TEXT: str | None = None
     TRANSCRIPT_COOKIES_PATH: str | None = None
+    # Attachment constraints and estimates
+    TRANSCRIPT_MAX_ATTACHMENT_MB: int = 25
+    TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN: float = 1.0
 
 
 def _parse_guilds() -> tuple[str | None, list[int]]:
@@ -259,6 +262,18 @@ def load_config() -> Config:
             str(file_overrides.get("TRANSCRIPT_COOKIES_PATH") or "").strip()
             or (os.getenv("TRANSCRIPT_COOKIES_PATH") or "").strip()
             or None
+        ),
+        TRANSCRIPT_MAX_ATTACHMENT_MB=int(
+            str(
+                file_overrides.get("TRANSCRIPT_MAX_ATTACHMENT_MB")
+                or _i("TRANSCRIPT_MAX_ATTACHMENT_MB", 25)
+            )
+        ),
+        TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN=float(
+            str(
+                file_overrides.get("TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN")
+                or _f("TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN", 1.0)
+            )
         ),
     )
 
