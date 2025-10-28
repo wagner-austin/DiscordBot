@@ -181,7 +181,9 @@ class TranscriptCog(BaseCog):
             return True
 
         # Queue the job
-        await self._queue.enqueue(TranscriptJob(request_id=req_id, url=url, user_id=user_id))
+        await self._queue.enqueue(
+            TranscriptJob(request_id=req_id, url=url, user_id=user_id, queued_ts=time.time())
+        )
         est_min = max(1, int((dur_s + 59) // 60)) if dur_s else "?"
         size_txt = f"~{int(approx_mb)} MB" if approx_mb else "unknown size"
         # Estimate processing time (excludes queue delays)
@@ -213,14 +215,24 @@ class TranscriptCog(BaseCog):
         mins = int(elapsed_s // 60)
         secs = int(elapsed_s % 60)
         eta_txt = f"~{mins} min {secs}s" if mins > 0 else f"~{secs}s"
+        # End-to-end time (including queue wait) if available
+        e2e_s = 0.0
+        if isinstance(job.queued_ts, float) and job.queued_ts > 0.0:
+            e2e_s = max(0.0, time.time() - job.queued_ts)
+        e2e_m = int(e2e_s // 60)
+        e2e_sec = int(e2e_s % 60)
+        e2e_txt = f"~{e2e_m} min {e2e_sec}s" if e2e_s > 0 else "~?s"
 
         header = f"Transcript for <{res.url}> (req={job.request_id})"
-        content = f"{header}\nCompleted in {eta_txt}"
+        content = f"{header}\nProcessing time {eta_txt}; total {e2e_txt}"
         data = res.text.encode("utf-8")
         file = discord.File(fp=io.BytesIO(data), filename=f"transcript_{res.video_id}.txt")
         await self.dm_file(job.user_id, content, file)
         logging.getLogger(__name__).info(
-            "Transcript job completed req=%s elapsed=%.2fs", job.request_id, elapsed_s
+            "Transcript job completed req=%s elapsed=%.2fs e2e=%.2fs",
+            job.request_id,
+            elapsed_s,
+            e2e_s,
         )
 
     # Failure handling and retry policy provided via helpers; no per-cog duplication
