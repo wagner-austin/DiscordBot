@@ -289,4 +289,3 @@ def _to_verbose_dict(obj: object) -> _WhisperVerbose:
             seg_id = int(_as_float(raw_id)) if raw_id is not None else len(segs)
             segs.append({"id": seg_id, "start": start, "end": end, "text": seg_text})
     return {"text": text, "segments": segs}
-
