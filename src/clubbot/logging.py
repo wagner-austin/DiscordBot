@@ -53,25 +53,51 @@ def setup_logging(level: str = "INFO") -> None:
     # Use force=True to ensure our config applies even if another library configured logging first.
     global INSTANCE_ID
     INSTANCE_ID = _compute_instance_id()
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format=(
-            "[%(asctime)s] [%(levelname)s] [%(name)s] "
-            "[inst=%(instance_id)s req=%(request_id)s] %(message)s"
-        ),
-        datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stdout,
-        force=True,
-    )
-    # Add request-id filter to all handlers
-    root = logging.getLogger()
-    for handler in root.handlers:
-        handler.addFilter(RequestIdFilter())
-        handler.addFilter(InstanceIdFilter(INSTANCE_ID))
+    lvl = getattr(logging, level.upper(), logging.INFO)
+
+    try:
+        from rich.logging import RichHandler
+        from rich.traceback import install as rich_install
+
+        rich_install(show_locals=False)
+        root = logging.getLogger()
+        root.handlers.clear()
+        root.setLevel(lvl)
+        rich_handler: logging.Handler = RichHandler(
+            rich_tracebacks=True, markup=True, show_time=True, show_level=True, show_path=False
+        )
+        rich_handler.setFormatter(
+            logging.Formatter("%(message)s [inst=%(instance_id)s req=%(request_id)s]")
+        )
+        rich_handler.addFilter(RequestIdFilter())
+        rich_handler.addFilter(InstanceIdFilter(INSTANCE_ID))
+        root.addHandler(rich_handler)
+    except (ImportError, Exception):
+        logging.basicConfig(
+            level=lvl,
+            format=(
+                "[%(asctime)s] [%(levelname)s] [%(name)s] "
+                "[inst=%(instance_id)s req=%(request_id)s] %(message)s"
+            ),
+            datefmt="%Y-%m-%d %H:%M:%S",
+            stream=sys.stdout,
+            force=True,
+        )
+        # Add request-id filter to all handlers
+        root = logging.getLogger()
+        for handler in root.handlers:
+            handler.addFilter(RequestIdFilter())
+            handler.addFilter(InstanceIdFilter(INSTANCE_ID))
+
     # Quiet noisy third-party loggers by default
     logging.getLogger("discord").setLevel(logging.WARNING)
     logging.getLogger("discord.gateway").setLevel(logging.WARNING)
     logging.getLogger("discord.client").setLevel(logging.WARNING)
+    # Reduce HTTP client verbosity
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+    logging.getLogger("httpcore.connection").setLevel(logging.WARNING)
     logging.getLogger(__name__).debug("Logging configured at level %s", level.upper())
     logging.getLogger(__name__).info("Bot instance id: %s", INSTANCE_ID)
 
