@@ -1,0 +1,17 @@
+services:
+  bot:
+    build: .
+    image: clubbot:latest
+    container_name: clubbot-bot
+    env_file:
+      - .env
+    # You can override/add envs at runtime via --env
+    volumes:
+      - metrics:/app/data
+    restart: unless-stopped
+
+volumes:
+  metrics:
+    external: true
+    name: clubbot_metrics
+
