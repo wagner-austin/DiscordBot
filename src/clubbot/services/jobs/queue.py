@@ -21,6 +21,8 @@ class TranscriptJob(JobBase):
     request_id: str
     url: str
     user_id: int
+    # Unix timestamp seconds when enqueued; 0.0 if unknown (e.g., tests)
+    queued_ts: float = 0.0
 
 
 T = TypeVar("T", bound=JobBase)
@@ -145,10 +147,11 @@ class FallbackJobQueue(JobQueueProto[T], Generic[T]):
             return await self._secondary.pop()
 
 
-class _JobPayload(TypedDict):
+class _JobPayload(TypedDict, total=False):
     request_id: str
     url: str
     user_id: int
+    queued_ts: float
 
 
 def _parse_job_payload(s: str) -> TranscriptJob | None:
@@ -161,10 +164,15 @@ def _parse_job_payload(s: str) -> TranscriptJob | None:
     req = data.get("request_id")
     url = data.get("url")
     uid = data.get("user_id")
+    qts = data.get("queued_ts", 0.0)
     if not isinstance(req, str) or not req:
         return None
     if not isinstance(url, str) or not url:
         return None
     if not isinstance(uid, int):
         return None
-    return TranscriptJob(request_id=req, url=url, user_id=uid)
+    try:
+        qts_f = float(qts) if qts is not None else 0.0
+    except (TypeError, ValueError):
+        qts_f = 0.0
+    return TranscriptJob(request_id=req, url=url, user_id=uid, queued_ts=qts_f)
