@@ -2,9 +2,8 @@ import logging
 import os
 import re
 import tomllib
-from collections.abc import Mapping
+from collections.abc import Mapping as TypingMapping
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -51,6 +50,14 @@ class Config:
     # Attachment constraints and estimates
     TRANSCRIPT_MAX_ATTACHMENT_MB: int = 25
     TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN: float = 1.0
+    # Chunking configuration
+    TRANSCRIPT_ENABLE_CHUNKING: bool = True
+    TRANSCRIPT_CHUNK_THRESHOLD_MB: float = 20.0
+    TRANSCRIPT_TARGET_CHUNK_MB: float = 20.0
+    TRANSCRIPT_MAX_CHUNK_DURATION_SECONDS: float = 600.0
+    TRANSCRIPT_MAX_CONCURRENT_CHUNKS: int = 3
+    TRANSCRIPT_SILENCE_THRESHOLD_DB: float = -40.0
+    TRANSCRIPT_SILENCE_DURATION_SECONDS: float = 0.5
 
 
 def _parse_guilds() -> tuple[str | None, list[int]]:
@@ -102,7 +109,7 @@ def _f(name: str, default: float) -> float:
         return default
 
 
-def _load_file_overrides() -> dict[str, Any]:
+def _load_file_overrides() -> dict[str, object]:
     """Load config overrides from a TOML file if present.
 
     Precedence:
@@ -131,7 +138,7 @@ def _load_file_overrides() -> dict[str, Any]:
 
 
 def _from_overrides_int(
-    overrides: Mapping[str, Any], key: str, env_default: int, *, minutes: bool = False
+    overrides: TypingMapping[str, object], key: str, env_default: int, *, minutes: bool = False
 ) -> int:
     if key in overrides and overrides[key] is not None:
         try:
@@ -273,6 +280,51 @@ def load_config() -> Config:
             str(
                 file_overrides.get("TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN")
                 or _f("TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN", 1.0)
+            )
+        ),
+        TRANSCRIPT_ENABLE_CHUNKING=(
+            str(
+                file_overrides.get("TRANSCRIPT_ENABLE_CHUNKING")
+                or os.getenv("TRANSCRIPT_ENABLE_CHUNKING", "true")
+            )
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "y", "on"}
+        ),
+        TRANSCRIPT_CHUNK_THRESHOLD_MB=float(
+            str(
+                file_overrides.get("TRANSCRIPT_CHUNK_THRESHOLD_MB")
+                or _f("TRANSCRIPT_CHUNK_THRESHOLD_MB", 20.0)
+            )
+        ),
+        TRANSCRIPT_TARGET_CHUNK_MB=float(
+            str(
+                file_overrides.get("TRANSCRIPT_TARGET_CHUNK_MB")
+                or _f("TRANSCRIPT_TARGET_CHUNK_MB", 20.0)
+            )
+        ),
+        TRANSCRIPT_MAX_CHUNK_DURATION_SECONDS=float(
+            str(
+                file_overrides.get("TRANSCRIPT_MAX_CHUNK_DURATION_SECONDS")
+                or _f("TRANSCRIPT_MAX_CHUNK_DURATION_SECONDS", 600.0)
+            )
+        ),
+        TRANSCRIPT_MAX_CONCURRENT_CHUNKS=int(
+            str(
+                file_overrides.get("TRANSCRIPT_MAX_CONCURRENT_CHUNKS")
+                or _i("TRANSCRIPT_MAX_CONCURRENT_CHUNKS", 3)
+            )
+        ),
+        TRANSCRIPT_SILENCE_THRESHOLD_DB=float(
+            str(
+                file_overrides.get("TRANSCRIPT_SILENCE_THRESHOLD_DB")
+                or _f("TRANSCRIPT_SILENCE_THRESHOLD_DB", -40.0)
+            )
+        ),
+        TRANSCRIPT_SILENCE_DURATION_SECONDS=float(
+            str(
+                file_overrides.get("TRANSCRIPT_SILENCE_DURATION_SECONDS")
+                or _f("TRANSCRIPT_SILENCE_DURATION_SECONDS", 0.5)
             )
         ),
     )
