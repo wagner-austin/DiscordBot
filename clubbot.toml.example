@@ -1,0 +1,25 @@
+﻿# Optional overrides for Club Bot configuration.
+# Copy to `clubbot.toml` (same folder) and edit values.
+# Do NOT commit secrets — treat this file as a template only.
+
+# Use STT provider for transcripts
+TRANSCRIPT_PROVIDER = "stt"
+
+# Whisper / STT tuning
+OPENAI_API_KEY = "sk-..."                       # required for STT in local/dev
+TRANSCRIPT_STT_API_TIMEOUT_SECONDS = 900         # API timeout seconds
+TRANSCRIPT_STT_API_MAX_RETRIES = 2               # API retries on transient errors
+
+# ETA estimate tuning
+TRANSCRIPT_STT_RTF = 0.5                         # seconds processing per audio second
+TRANSCRIPT_DL_MIB_PER_SEC = 4.0                  # estimated MiB/min download speed
+
+# YouTube cookies to bypass consent/anti-bot gate (choose ONE of the following)
+
+# 1) Cookie header (recommended minimal, non-auth cookies only)
+#    Example: CONSENT / YSC / VISITOR_INFO1_LIVE / VISITOR_PRIVACY_METADATA / PREF / GPS / __Secure-YNID / __Secure-ROLLOUT_TOKEN
+#    Paste the full header string below (quote it). Do NOT include SID/SSID/HSID/APISID/SAPISID/PSID/LOGIN_INFO/SIDCC/ST-*.
+# TRANSCRIPT_COOKIES_TEXT = "YSC=...; VISITOR_INFO1_LIVE=...; VISITOR_PRIVACY_METADATA=...; PREF=...; GPS=1"
+
+# 2) Path to cookies.txt (Netscape format) containing only non-auth cookies for youtube.com
+# TRANSCRIPT_COOKIES_PATH = "/absolute/path/to/cookies.txt"
