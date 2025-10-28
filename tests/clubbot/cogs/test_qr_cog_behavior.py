@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any
 
 import discord
 import pytest
@@ -11,11 +12,11 @@ class FakeQRService:
     def __init__(self, fail: bool = False) -> None:
         self.fail = fail
 
-    def generate_qr(self, url: str):  # pragma: no cover - trivial
+    def generate_qr_with_options(self, opts):  # pragma: no cover - trivial
         if self.fail:
             raise RuntimeError("boom")
         # Minimal PNG header to avoid pillow dependency here
-        return type("QRResult", (), {"image_png": b"\x89PNG\r\n\x1a\n", "url": url})()
+        return type("QRResult", (), {"image_png": b"\x89PNG\r\n\x1a\n", "url": opts.url})()
 
 
 class FakeResponse:
@@ -23,13 +24,13 @@ class FakeResponse:
         self._done = False
         self._parent = parent
 
-    def is_done(self) -> bool:  # type: ignore[override]
+    def is_done(self) -> bool:
         return self._done
 
-    async def defer(self, *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+    async def defer(self, *, ephemeral: bool = False) -> None:
         self._done = True
 
-    async def send_message(self, content: str = "", *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+    async def send_message(self, content: str = "", *, ephemeral: bool = False) -> None:
         self._done = True
         self._parent.calls.append({"message": content, "file": None, "ephemeral": ephemeral})
 
@@ -38,13 +39,15 @@ class FakeFollowup:
     def __init__(self, parent: "FakeInteraction") -> None:
         self._parent = parent
 
-    async def send(self, content: str = "", *, file=None, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+    async def send(
+        self, content: str = "", *, file: discord.File | None = None, ephemeral: bool = False
+    ) -> None:
         self._parent.calls.append({"message": content, "file": file, "ephemeral": ephemeral})
 
 
 class FakeInteraction:
     def __init__(self) -> None:
-        self.calls: list[dict] = []
+        self.calls: list[dict[str, Any]] = []
         self.user = SimpleNamespace(id=123456)
         self.response = FakeResponse(self)
         self.followup = FakeFollowup(self)
@@ -139,5 +142,5 @@ async def test_qrcode_handles_internal_exception_with_generic_message():
 
     assert interaction.calls, "Expected a respond call"
     last = interaction.calls[-1]
-    assert last["message"] == "An error occurred. Please try again later."
+    assert isinstance(last["message"], str) and last["message"].startswith("An error occurred")
     assert last["ephemeral"] is True

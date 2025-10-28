@@ -1,5 +1,6 @@
 import os
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from src.clubbot.config import Config
@@ -29,27 +30,40 @@ def make_cfg(guild_ids=None) -> Config:
 async def test_on_ready_triggers_sync_commands():
     # Ensure startup sync is enabled for this test environment
     os.environ["COMMANDS_SYNC_ON_START"] = "true"
-    cfg = make_cfg([])
+    cfg = Config(
+        DISCORD_TOKEN="test",
+        DISCORD_GUILD_ID=None,
+        DISCORD_GUILD_IDS=[],
+        LOG_LEVEL="INFO",
+        QRCODE_RATE_LIMIT=1,
+        QRCODE_RATE_WINDOW_SECONDS=1,
+        QR_DEFAULT_ERROR_CORRECTION="M",
+        QR_DEFAULT_BOX_SIZE=10,
+        QR_DEFAULT_BORDER=2,
+        QR_DEFAULT_FILL_COLOR="#000000",
+        QR_DEFAULT_BACK_COLOR="#FFFFFF",
+        QR_PUBLIC_RESPONSES=True,
+        COMMANDS_SYNC_GLOBAL=True,
+    )
     from src.clubbot.services.metrics import NullMetricsService
 
     container = ServiceContainer(cfg=cfg, qr_service=QRService(cfg), metrics=NullMetricsService())
     orch = BotOrchestrator(container)
-    orch.build_bot()
-    # Cogs not required for this behavior test
+    bot = orch.build_bot()
 
-    called = False
+    calls: list[dict[str, Any]] = []
 
-    async def fake_sync():
-        nonlocal called
-        called = True
+    async def fake_tree_sync(*, guild: object | None = None) -> list[object]:
+        calls.append({"guild": guild})
+        return []
 
-    orch.sync_commands = fake_sync  # type: ignore[assignment]
+    bot.tree.sync = fake_tree_sync
     orch.register_listeners()
-    # Call the on_ready listener directly via orchestrator
-    assert hasattr(orch, "_on_ready_listener")
-    await orch._on_ready_listener()  # type: ignore[attr-defined]
+    ready = orch._on_ready_listener
+    assert ready is not None
+    await ready()
 
-    assert called is True
+    assert len(calls) == 1 and calls[0]["guild"] is None
 
 
 @pytest.mark.asyncio
@@ -80,10 +94,11 @@ async def test_sync_commands_global_only():
     # Patch tree.sync to observe calls
     calls: list[SimpleNamespace] = []
 
-    async def fake_tree_sync(*, guild=None):  # type: ignore[no-redef]
+    async def fake_tree_sync_global(*, guild: object | None = None) -> list[object]:
         calls.append(SimpleNamespace(guild=guild))
+        return []
 
-    bot.tree.sync = fake_tree_sync  # type: ignore[assignment]
+    bot.tree.sync = fake_tree_sync_global
 
     await orch.sync_commands()
 
@@ -103,15 +118,17 @@ async def test_on_guild_join_no_per_guild_sync():
 
     calls: list[SimpleNamespace] = []
 
-    async def fake_tree_sync(*, guild=None):  # type: ignore[no-redef]
+    async def fake_tree_sync_join(*, guild: object | None = None) -> list[object]:
         calls.append(SimpleNamespace(guild=guild))
+        return []
 
-    bot.tree.sync = fake_tree_sync  # type: ignore[assignment]
+    bot.tree.sync = fake_tree_sync_join
 
     # Invoke listener directly
-    assert hasattr(orch, "_on_guild_join_listener")
+    join_listener = orch._on_guild_join_listener
+    assert join_listener is not None
     guild = SimpleNamespace(id=555, name="Target")
-    await orch._on_guild_join_listener(guild)  # type: ignore[attr-defined]
+    await join_listener(guild)
     assert calls == []
 
 
@@ -144,17 +161,19 @@ async def test_global_sync_runs_once_on_boot():
 
     calls: list[SimpleNamespace] = []
 
-    async def fake_tree_sync(*, guild=None):  # type: ignore[no-redef]
+    async def fake_tree_sync_boot(*, guild: object | None = None) -> list[object]:
         calls.append(SimpleNamespace(guild=guild))
+        return []
 
-    bot.tree.sync = fake_tree_sync  # type: ignore[assignment]
+    bot.tree.sync = fake_tree_sync_boot
     orch.register_listeners()
 
     # First ready should perform a global sync
-    assert hasattr(orch, "_on_ready_listener")
-    await orch._on_ready_listener()  # type: ignore[attr-defined]
+    ready_listener = orch._on_ready_listener
+    assert ready_listener is not None
+    await ready_listener()
     assert len(calls) == 1 and calls[0].guild is None
 
     # Subsequent ready should not sync again
-    await orch._on_ready_listener()  # type: ignore[attr-defined]
+    await ready_listener()
     assert len(calls) == 1

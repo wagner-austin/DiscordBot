@@ -1,6 +1,7 @@
 import asyncio
 import time
 from types import SimpleNamespace
+from typing import Any
 
 import discord
 import pytest
@@ -14,13 +15,13 @@ class FakeResponse:
         self._done = False
         self._parent = parent
 
-    def is_done(self) -> bool:  # type: ignore[override]
+    def is_done(self) -> bool:
         return self._done
 
-    async def defer(self, *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+    async def defer(self, *, ephemeral: bool = False) -> None:
         self._done = True
 
-    async def send_message(self, content: str = "", *, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+    async def send_message(self, content: str = "", *, ephemeral: bool = False) -> None:
         self._done = True
         self._parent.calls.append({"message": content, "file": None, "ephemeral": ephemeral})
 
@@ -29,13 +30,15 @@ class FakeFollowup:
     def __init__(self, parent: "FakeInteraction") -> None:
         self._parent = parent
 
-    async def send(self, content: str = "", *, file=None, ephemeral: bool = False):  # type: ignore[no-untyped-def]
+    async def send(
+        self, content: str = "", *, file: discord.File | None = None, ephemeral: bool = False
+    ) -> None:
         self._parent.calls.append({"message": content, "file": file, "ephemeral": ephemeral})
 
 
 class FakeInteraction:
     def __init__(self, uid: int) -> None:
-        self.calls: list[dict] = []
+        self.calls: list[dict[str, Any]] = []
         self.user = SimpleNamespace(id=uid)
         self.response = FakeResponse(self)
         self.followup = FakeFollowup(self)
@@ -74,7 +77,7 @@ async def test_qrcode_spam_concurrent_calls_complete_without_errors():
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1000, window=1)
     svc = SlowQRService(delay=0.05)
-    cog = QRCog(bot, cfg, svc)  # type: ignore[arg-type]
+    cog = QRCog(bot, cfg, svc)
 
     # Launch many concurrent calls with unique users to avoid rate limiter
     n = 10
