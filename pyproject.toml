@@ -12,6 +12,10 @@ python = "^3.11"
 qrcode = {extras = ["pil"], version = "^7.4.2"}
 Pillow = "^10.1.0"
 python-dotenv = "^1.0.0"
+youtube-transcript-api = "^0.6.2"
+yt-dlp = "^2025.1.26"
+openai = "^1.51.2"
+rich = "^13.7.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
@@ -37,6 +41,7 @@ select = [
     "F",  # pyflakes
     "I",  # isort
     "B",  # bugbear
+    "BLE",# blind except
     "UP", # pyupgrade
     "N",  # pep8-naming
     "C4", # flake8-comprehensions
@@ -50,6 +55,15 @@ fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/invite.py" = ["T201"]  # allow print in CLI utility
+"typings/youtube_transcript_api/__init__.pyi" = ["N818"]
+"src/clubbot/cogs/*.py" = ["BLE001"]  # cogs use top-level catch-all to standardize user errors
+"scripts/*.py" = ["BLE001"]
+"src/clubbot/orchestrator.py" = ["BLE001"]
+"src/clubbot/services/transcript/app.py" = ["BLE001"]
+"src/clubbot/services/transcript/provider.py" = ["BLE001"]
+"src/clubbot/utils/*.py" = ["BLE001"]
+"test_yt_api.py" = ["BLE001"]
+"src/clubbot/services/jobs/runner.py" = ["BLE001"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -65,10 +79,14 @@ no_implicit_reexport = true
 show_error_codes = true
 pretty = true
 files = ["src"]
+mypy_path = ["typings"]
 
 [[tool.mypy.overrides]]
 module = [
   "discord.*",
   "qrcode.*",
+  "youtube_transcript_api.*",
+  "yt_dlp.*",
+  "openai.*",
 ]
 ignore_missing_imports = true
