@@ -136,9 +136,12 @@ async def test_stt_preflight_blocks_too_large() -> None:
     finally:
         await cog._runner.stop()
 
-    assert interaction.calls, "Expected an error message"
+    # We now warn and queue rather than blocking on estimates
+    assert interaction.calls, "Expected a queued message"
     last = interaction.calls[-1]
     assert isinstance(last.get("message"), str)
     msg = last["message"].lower()
-    assert "exceeds" in msg or "too large" in msg
-    assert last["ephemeral"] is True
+    assert "queued transcription for <" in msg
+    assert "estimated transcript" in msg
+    # With public responses enabled in test cfg, this is not ephemeral
+    assert last["ephemeral"] is False
