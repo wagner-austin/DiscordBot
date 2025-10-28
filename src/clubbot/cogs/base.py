@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import uuid
-from typing import Any, Protocol, runtime_checkable
 
 import discord
 from discord.ext import commands
@@ -47,17 +46,38 @@ class BaseCog(commands.Cog):
         exc: Exception,
     ) -> None:
         log.exception("Unhandled exception: %s", exc)
+        # Include request id for traceability in user message if available
+        req_id = None
+        extra = getattr(log, "extra", {})
+        if isinstance(extra, dict):
+            req_id = extra.get("request_id")
+        suffix = f" (req={req_id})" if req_id else ""
         with contextlib.suppress(Exception):
             if interaction.response.is_done():
                 await interaction.followup.send(
-                    "An error occurred. Please try again later.", ephemeral=True
+                    f"An error occurred{suffix}. Please try again later.", ephemeral=True
                 )
             else:
                 await interaction.response.send_message(
-                    "An error occurred. Please try again later.", ephemeral=True
+                    f"An error occurred{suffix}. Please try again later.", ephemeral=True
                 )
 
+    async def notify_user(self, user_id: int, message: str) -> None:
+        try:
+            bot = getattr(self, "bot", None)
+            if bot is None:
+                return
+            user = await bot.fetch_user(user_id)
+            await user.send(message)
+        except Exception:
+            logging.getLogger(__name__).debug("Failed to DM user=%s", user_id)
 
-@runtime_checkable
-class _FollowupLike(Protocol):
-    async def send(self, *args: Any, **kwargs: Any) -> Any: ...
+    async def dm_file(self, user_id: int, content: str, file: discord.File) -> None:
+        try:
+            bot = getattr(self, "bot", None)
+            if bot is None:
+                return
+            user = await bot.fetch_user(user_id)
+            await user.send(content, file=file)
+        except Exception:
+            logging.getLogger(__name__).debug("Failed to DM file to user=%s", user_id)
