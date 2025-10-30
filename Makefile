@@ -10,7 +10,6 @@ help:
 	@echo "  make invite    - Print OAuth2 invite URL"
 	@echo "  make env       - Show required env vars"
 	@echo "  make validate-transcript URL=<youtube-url>  - Fetch + clean transcript via provider"
-	@echo "  make upstash-health  - Probe Upstash REST credentials and pipeline"
 	@echo "  make start     - Build + start Docker Compose stack (PowerShell)"
 	@echo "  make stop      - Stop Docker Compose stack (PowerShell)"
 	@echo "  make clean     - Stop, prune, rebuild stack from scratch (PowerShell)"
@@ -54,11 +53,10 @@ validate-transcript: install-dev
 	@if [ -z "$(URL)" ]; then echo "Usage: make validate-transcript URL=<youtube-url>"; exit 1; fi
 	poetry run python scripts/validate_transcript.py $(URL)
 
-upstash-health: install-dev
-	poetry run python scripts/upstash_health.py
+ 
 
 lint:
-	poetry run ruff check .
+	poetry run ruff check . --fix
 
 lint-fix:
 	poetry run ruff check . --fix
