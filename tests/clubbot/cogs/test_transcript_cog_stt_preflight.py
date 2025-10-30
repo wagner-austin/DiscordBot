@@ -7,6 +7,7 @@ import pytest
 from discord.ext import commands
 from src.clubbot.cogs.transcript import TranscriptCog
 from src.clubbot.config import Config
+from src.clubbot.services.jobs.queue import MemoryJobQueue, TranscriptJob
 from src.clubbot.services.transcript.types import SupportsEstimate
 
 
@@ -100,7 +101,10 @@ async def test_stt_preflight_blocks_too_long() -> None:
         TRANSCRIPT_MAX_FILE_MB=100,
     )
     svc = FakeTranscriptService(provider=FakeEstimateProvider(dur_s=3600, size_mb=10.0))
-    cog = TranscriptCog(bot, cfg, svc)  # starts runner but we won't enqueue
+    # Inject an in-memory queue for tests
+    cog = TranscriptCog(
+        bot, cfg, svc, queue=MemoryJobQueue[TranscriptJob]()
+    )  # starts runner but we won't enqueue
     interaction = FakeInteraction()
 
     try:
@@ -128,7 +132,7 @@ async def test_stt_preflight_blocks_too_large() -> None:
     )
     # Duration okay, size too large (estimated)
     svc = FakeTranscriptService(provider=FakeEstimateProvider(dur_s=120, size_mb=48.0))
-    cog = TranscriptCog(bot, cfg, svc)
+    cog = TranscriptCog(bot, cfg, svc, queue=MemoryJobQueue[TranscriptJob]())
     interaction = FakeInteraction()
 
     try:
