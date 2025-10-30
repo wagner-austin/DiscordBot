@@ -20,7 +20,7 @@ class JobRunner(Generic[T]):
         max_concurrency: int = 1,
         retry_attempts: int = 1,
         retry_backoff: float = 1.0,
-        poll_interval: float = 1.0,
+        idle_sleep: float = 1.0,
         logger: logging.Logger | None = None,
         failure_callback: Callable[[JobBase, Exception, int, bool], Awaitable[None] | None]
         | None = None,
@@ -31,7 +31,7 @@ class JobRunner(Generic[T]):
         self._max_concurrency = max(1, max_concurrency)
         self._retry_attempts = max(0, retry_attempts)
         self._retry_backoff = max(0.0, retry_backoff)
-        self._poll_interval = max(0.1, poll_interval)
+        self._idle_sleep = max(0.1, idle_sleep)
         self._logger = logger or logging.getLogger(__name__)
         self._tasks: list[asyncio.Task[None]] = []
         self._stopping = False
@@ -58,14 +58,14 @@ class JobRunner(Generic[T]):
             try:
                 job = await self._queue.pop()
                 if job is None:
-                    await asyncio.sleep(self._poll_interval)
+                    await asyncio.sleep(self._idle_sleep)
                     continue
                 await self._handle(job)
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # worker resilience
                 self._logger.exception("Job worker error: %s", e)
-                await asyncio.sleep(self._poll_interval)
+                await asyncio.sleep(self._idle_sleep)
 
     async def _handle(self, job: T) -> None:
         attempt = 0
