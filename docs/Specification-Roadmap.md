@@ -2,7 +2,7 @@
 
 This document summarizes the current implementation in this repository and distinguishes it from future roadmap concepts.
 
-Last updated: 2025-12-01
+Last updated: 2025-10-30
 
 ## Current Implementation (This Repo)
 
@@ -12,7 +12,7 @@ Last updated: 2025-12-01
 - Background Jobs
   - Typed `JobRunner` with `retry_policy` and `failure_callback` hooks
   - Shared factories: `default_retry_policy_factory`, `failure_notifier_factory`
-  - Queues: Memory by default; Upstash REST fallback when configured
+  - Queue: Redis protocol (BRPOP listener) via `REDIS_URL`
 - Metrics
   - SQLite-backed metrics; no Postgres dependency
 
@@ -30,4 +30,3 @@ Last updated: 2025-12-01
 - Consistent DM utilities via `BaseCog.notify_user` / `BaseCog.dm_file`
 
 See also: `docs/Background-Jobs.md`
-
