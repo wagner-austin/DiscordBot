@@ -34,7 +34,7 @@ async def test_user_error_not_retried_and_notified_once() -> None:
         retry_policy=default_retry_policy_factory(UserInputError),
         retry_attempts=1,
         retry_backoff=0.01,
-        poll_interval=0.01,
+        idle_sleep=0.01,
     )
     runner.start()
     await q.enqueue(FakeJob(request_id="r1", user_id=99))
@@ -65,7 +65,7 @@ async def test_system_error_notified_on_final_failure_only() -> None:
         # No retry policy: will retry once (retry_attempts=1), then notify on final failure
         retry_attempts=1,
         retry_backoff=0.01,
-        poll_interval=0.01,
+        idle_sleep=0.01,
     )
     runner.start()
     await q.enqueue(FakeJob(request_id="r2", user_id=7))
