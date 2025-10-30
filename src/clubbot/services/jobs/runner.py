@@ -58,7 +58,11 @@ class JobRunner(Generic[T]):
             try:
                 job = await self._queue.pop()
                 if job is None:
-                    await asyncio.sleep(self._idle_sleep)
+                    # For non-blocking queues (e.g., in-memory tests), sleep briefly
+                    # to avoid busy looping. Blocking queues (e.g., Redis BRPOP)
+                    # should immediately continue to block on the next pop call.
+                    if not self._queue.is_blocking():
+                        await asyncio.sleep(self._idle_sleep)
                     continue
                 await self._handle(job)
             except asyncio.CancelledError:
