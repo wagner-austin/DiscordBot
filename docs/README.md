@@ -11,6 +11,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
   - Clear messages for invalid scheme/host and overly long URLs
   - Response includes a clickable hyperlink to the destination URL for confirmation
 - Public responses by default: the PNG and a clickable link are visible to everyone; validation and rate-limit messages remain ephemeral
+  - Visibility: validation messages are always ephemeral; rate-limit messages follow `QR_PUBLIC_RESPONSES` (public by default)
 - Modular structure (cogs, services, utils)
 - Global-only app commands (no per-guild copies) with DM support enabled
 
@@ -18,7 +19,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
   - Fetches captions when available (default provider = `youtube`).
   - Optional STT provider (`TRANSCRIPT_PROVIDER=stt`) downloads audio and transcribes it.
   - Preflight checks (STT): blocks jobs exceeding configured duration/size before queueing.
-  - Background jobs: user is DMâ€™d on success or any failure (no silent waits).
+  - Background jobs: user is DM’d on success and on first user error or final failure (no silent waits).
 
 ## Prerequisites
 - Python 3.11+
@@ -29,7 +30,7 @@ Least-viable product: a modular Python bot that provides a `/qrcode` slash comma
 ## Setup
 1. Copy `.env.example` to `.env` and fill in values (at least `DISCORD_TOKEN`).
 2. Install deps: `poetry install`
-3. One-time global sync (first run only): set `COMMANDS_SYNC_ON_START=true` in `.env`, then run `make run`. After you see â€œPerformed global command syncâ€, set it back to `false`.
+3. One-time global sync (first run only): set `COMMANDS_SYNC_ON_START=true` in `.env`, then run `make run`. After you see "Performed global command sync", set it back to `false`.
 4. Invite the bot to a server:
    - Developer Portal > OAuth2 > URL Generator
    - Scopes: `bot`, `applications.commands`
@@ -82,7 +83,7 @@ src/clubbot/
   container.py          # Service container (DI composition)
   services/qr_service.py# QR generation (qrcode + Pillow)
   services/qr_logic.py  # Resolve options & defaults
-  services/jobs/queue.py# Generic job queues (memory/Upstash) for JobBase
+  services/jobs/queue.py# Redis-backed job queue (listener via BRPOP)
   services/jobs/runner.py# Generic job runner with retry/failure hooks
   services/jobs/helpers.py# Failure notifier and retry-policy factories (typed)
   services/transcript/   # Transcript providers (YouTube captions, STT)
@@ -93,14 +94,14 @@ src/clubbot/
 ```
 
 ## Notes
-- This LVP does not include database or Redis.
+- This LVP does not include a persistent database; Redis (protocol) is required for background jobs (set `REDIS_URL`).
 - Global-only commands: we sync globally via `bot.tree.sync()` and allow DMs (no per-guild copies by default).
 - Propagation: initial global registration may take up to ~1 hour; subsequent edits are often faster.
 
 ## Metrics
 - Backend: SQLite (default `data/metrics.sqlite`)
 - Logs both successes and failures (validation, rate-limit, internal errors)
-- Stats command: `/qrstats` (Officers role only). No parameters - uses defaults.
+- Stats command: `/qrstats` (Officers role only). Implemented in `src/clubbot/cogs/qr_stats.py` but not loaded by default — wire `QRStatsCog` in the container to enable it.
 - Environment:
   - `METRICS_ENABLED` (default `true`)
   - `METRICS_SQLITE_PATH` (default `data/metrics.sqlite`)
@@ -118,7 +119,7 @@ src/clubbot/
   - `DISCORD_GUILD_ID` or `DISCORD_GUILD_IDS` (no per-guild copies are created by default; globals cover all guilds)
   - `BOT_INSTANCE_ID` to set a stable id across restarts/containers (otherwise auto-derived)
 - QR defaults (brand/styling)
-  - `QR_DEFAULT_ERROR_CORRECTION` (L, M, Q, H â€” default M)
+  - `QR_DEFAULT_ERROR_CORRECTION` (L, M, Q, H - default M)
   - `QR_DEFAULT_BOX_SIZE` (default 10)
   - `QR_DEFAULT_BORDER` (default 1)
   - `QR_DEFAULT_FILL_COLOR` (default `#000000`)
@@ -126,17 +127,36 @@ src/clubbot/
 - Rate limiting (per-user)
   - `QRCODE_RATE_LIMIT` (default 1)
   - `QRCODE_RATE_WINDOW_SECONDS` (default 1)
-  - `QR_PUBLIC_RESPONSES` (default `true`) â€” set to `false` to make success responses ephemeral
+  - `QR_PUBLIC_RESPONSES` (default `true`) - set to `false` to make success responses ephemeral
+
+- Queues
+  - `REDIS_URL` — Redis protocol (listener via BRPOP)
 
 - Transcript
   - `TRANSCRIPT_PROVIDER` (default `youtube`; set `stt` to enable speech-to-text)
   - `OPENAI_API_KEY` (required if `TRANSCRIPT_PROVIDER=stt`)
   - `TRANSCRIPT_PREFERRED_LANGS` (default `en,en-US,en-GB`)
-  - `TRANSCRIPT_MAX_VIDEO_SECONDS` (default `5400`) â€” max duration for STT
-  - `TRANSCRIPT_MAX_FILE_MB` (default `25`) â€” max audio size for STT
-  - `TRANSCRIPT_PUBLIC_RESPONSES` (default `false`) â€” transcript attachments can be ephemeral or public`n  - `TRANSCRIPT_STT_API_TIMEOUT_SECONDS` (default `900`) - Whisper API timeout`n  - `TRANSCRIPT_STT_API_MAX_RETRIES` (default `2`) - Whisper API retries`n  - `TRANSCRIPT_STT_RTF` (default `0.5`) - seconds of processing per audio second (ETA)`n  - `TRANSCRIPT_DL_MIB_PER_SEC` (default `4.0`) - download speed for ETA (MiB/min)`n  - `TRANSCRIPT_COOKIES_TEXT` - optional Cookie header for YouTube (STT)`n  - `TRANSCRIPT_COOKIES_PATH` - optional cookies.txt path for YouTube (STT)`n`nBehavior
-- Validation happens before rate limiting so users always see clear input errors rather than generic cooldown messages.
-- The command defers immediately (ACK first) to avoid Discordâ€™s 3s timeout; work runs after the ACK.
+  - `TRANSCRIPT_MAX_VIDEO_SECONDS` (default `5400`) - max duration for STT
+  - `TRANSCRIPT_MAX_FILE_MB` (default `25`) - max audio size for STT
+  - `TRANSCRIPT_PUBLIC_RESPONSES` (default `false`) - transcript attachments can be ephemeral or public
+  - `TRANSCRIPT_STT_API_TIMEOUT_SECONDS` (default `900`) - Whisper API timeout
+  - `TRANSCRIPT_STT_API_MAX_RETRIES` (default `2`) - Whisper API retries
+  - `TRANSCRIPT_STT_RTF` (default `0.5`) - seconds of processing per audio second (ETA)
+  - `TRANSCRIPT_DL_MIB_PER_SEC` (default `4.0`) - download speed for ETA (MiB/s)
+  - `TRANSCRIPT_COOKIES_TEXT` - optional Cookie header for YouTube (STT)
+  - `TRANSCRIPT_COOKIES_PATH` - optional cookies.txt path for YouTube (STT)
+  - Chunking (STT; requires `ffmpeg`/`ffprobe` on PATH):
+    - `TRANSCRIPT_ENABLE_CHUNKING` (default `true`)
+    - `TRANSCRIPT_CHUNK_THRESHOLD_MB` (default `20.0`)
+    - `TRANSCRIPT_TARGET_CHUNK_MB` (default `20.0`)
+    - `TRANSCRIPT_MAX_CHUNK_DURATION_SECONDS` (default `600.0`)
+    - `TRANSCRIPT_MAX_CONCURRENT_CHUNKS` (default `3`)
+    - `TRANSCRIPT_SILENCE_THRESHOLD_DB` (default `-40.0`)
+    - `TRANSCRIPT_SILENCE_DURATION_SECONDS` (default `0.5`)
+
+Behavior
+- Validation happens before rate limiting so users see clear input errors rather than generic cooldown messages.
+- The command defers immediately (ACK first) to avoid Discord's 3s timeout; work runs after the ACK.
 
 ## Linting & Formatting
 - Lint: `make lint` (ruff check)
@@ -154,9 +174,9 @@ src/clubbot/
 ### Background Jobs (Typed, Reusable)
 - Define a job dataclass implementing `JobBase` (fields: `request_id: str`, `user_id: int`).
 - Use `JobRunner` with typed hooks:
-  - `failure_callback(job, exc, attempt, will_retry)` â€” see `services/jobs/helpers.py` to DM users on failures.
+  - `failure_callback(job, exc, attempt, will_retry)` - see `services/jobs/helpers.py` to DM users on failures.
   - `retry_policy(job, exc, attempt) -> bool` â€” use `default_retry_policy_factory` to skip retries for user errors.
-- Queues: `MemoryJobQueue[JobBase]` or `UpstashJobQueue` via `build_queue()`.
+- Queues: `RedisJobQueue` (listener) via `build_queue()`.
 - Base DM helpers: `BaseCog.notify_user(...)` and `BaseCog.dm_file(...)` for consistent user messaging.
 
 Correlation header for outbound HTTP:
