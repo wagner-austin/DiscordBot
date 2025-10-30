@@ -58,6 +58,8 @@ class Config:
     TRANSCRIPT_MAX_CONCURRENT_CHUNKS: int = 3
     TRANSCRIPT_SILENCE_THRESHOLD_DB: float = -40.0
     TRANSCRIPT_SILENCE_DURATION_SECONDS: float = 0.5
+    # Job queue configuration (Redis BRPOP listener)
+    JOB_QUEUE_BRPOP_TIMEOUT_SECONDS: int = 0  # 0 = indefinite block
 
 
 def _parse_guilds() -> tuple[str | None, list[int]]:
@@ -327,6 +329,7 @@ def load_config() -> Config:
                 or _f("TRANSCRIPT_SILENCE_DURATION_SECONDS", 0.5)
             )
         ),
+        JOB_QUEUE_BRPOP_TIMEOUT_SECONDS=_i("JOB_QUEUE_BRPOP_TIMEOUT_SECONDS", 0),
     )
 
 
