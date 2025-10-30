@@ -6,6 +6,7 @@ import pytest
 from discord.ext import commands
 from src.clubbot.cogs.transcript import TranscriptCog
 from src.clubbot.config import Config
+from src.clubbot.services.jobs.queue import MemoryJobQueue, TranscriptJob
 from src.clubbot.services.transcript.types import TranscriptResult
 
 
@@ -84,7 +85,7 @@ async def test_transcript_command_always_responds_with_file():
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg()
     svc = FakeTranscriptService(text="short text")
-    cog = TranscriptCog(bot, cfg, svc)
+    cog = TranscriptCog(bot, cfg, svc, queue=MemoryJobQueue[TranscriptJob]())
     interaction = FakeInteraction()
     await cog.transcript.callback(cog, interaction, "https://youtu.be/dQw4w9WgXcQ")
 
