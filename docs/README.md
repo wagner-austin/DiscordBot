@@ -83,7 +83,7 @@ src/clubbot/
   container.py          # Service container (DI composition)
   services/qr_service.py# QR generation (qrcode + Pillow)
   services/qr_logic.py  # Resolve options & defaults
-  services/jobs/queue.py# Redis-backed job queue (listener via BRPOP)
+  services/jobs/queue.py# Redis-backed job queue (listener via BRPOP; indefinite block by default)
   services/jobs/runner.py# Generic job runner with retry/failure hooks
   services/jobs/helpers.py# Failure notifier and retry-policy factories (typed)
   services/transcript/   # Transcript providers (YouTube captions, STT)
@@ -94,7 +94,7 @@ src/clubbot/
 ```
 
 ## Notes
-- This LVP does not include a persistent database; Redis (protocol) is required for background jobs (set `REDIS_URL`).
+- This LVP does not include a persistent database; Redis (protocol) is required for background jobs when `TRANSCRIPT_PROVIDER=stt` (set `REDIS_URL`).
 - Global-only commands: we sync globally via `bot.tree.sync()` and allow DMs (no per-guild copies by default).
 - Propagation: initial global registration may take up to ~1 hour; subsequent edits are often faster.
 
@@ -130,7 +130,8 @@ src/clubbot/
   - `QR_PUBLIC_RESPONSES` (default `true`) - set to `false` to make success responses ephemeral
 
 - Queues
-  - `REDIS_URL` — Redis protocol (listener via BRPOP)
+  - `REDIS_URL` — Redis protocol (listener via BRPOP; required only when `TRANSCRIPT_PROVIDER=stt`)
+  - `JOB_QUEUE_BRPOP_TIMEOUT_SECONDS` — BRPOP timeout, default `0` (indefinite block). Increase only if your provider drops long-idle connections.
 
 - Transcript
   - `TRANSCRIPT_PROVIDER` (default `youtube`; set `stt` to enable speech-to-text)
@@ -176,7 +177,7 @@ Behavior
 - Use `JobRunner` with typed hooks:
   - `failure_callback(job, exc, attempt, will_retry)` - see `services/jobs/helpers.py` to DM users on failures.
   - `retry_policy(job, exc, attempt) -> bool` â€” use `default_retry_policy_factory` to skip retries for user errors.
-- Queues: `RedisJobQueue` (listener) via `build_queue()`.
+- Queues: `RedisJobQueue` (listener) via `build_queue(brpop_timeout_seconds=cfg.JOB_QUEUE_BRPOP_TIMEOUT_SECONDS)`.
 - Base DM helpers: `BaseCog.notify_user(...)` and `BaseCog.dm_file(...)` for consistent user messaging.
 
 Correlation header for outbound HTTP:
