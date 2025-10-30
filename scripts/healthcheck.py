@@ -63,7 +63,10 @@ def _check_chunking(provider: str) -> bool:
         return False
 
 
-def _check_redis() -> bool:
+def _check_redis(provider: str) -> bool:
+    # Only required when background jobs are enabled (STT provider)
+    if provider != "stt":
+        return True
     redis_url = (os.getenv("REDIS_URL") or "").strip()
     if not redis_url:
         _warn("health: Redis not configured")
@@ -88,7 +91,7 @@ def main() -> int:
     provider = (os.getenv("TRANSCRIPT_PROVIDER") or "youtube").strip().lower()
     ok &= _check_openai(provider)
     ok &= _check_chunking(provider)
-    ok &= _check_redis()
+    ok &= _check_redis(provider)
     return 0 if ok else 1
 
 
