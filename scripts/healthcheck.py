@@ -19,26 +19,29 @@ def _has_cmd(name: str) -> bool:
     return which(name) is not None
 
 
-def main() -> int:
-    ok = True
-
-    # Required token
-    if not (os.getenv("DISCORD_TOKEN") or "").strip():
+def _check_discord_token() -> bool:
+    tok = (os.getenv("DISCORD_TOKEN") or "").strip()
+    if not tok:
         _warn("health: missing DISCORD_TOKEN")
-        ok = False
-    else:
-        _ok("health: DISCORD_TOKEN present")
+        return False
+    _ok("health: DISCORD_TOKEN present")
+    return True
 
-    provider = (os.getenv("TRANSCRIPT_PROVIDER") or "youtube").strip().lower()
-    if provider == "stt":
-        # Check both OPENAI_API_KEY and OPEN_AI_API_KEY (like config.py does)
-        openai_key = (os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_AI_API_KEY") or "").strip()
-        if not openai_key:
-            _warn("health: TRANSCRIPT_PROVIDER=stt but OPENAI_API_KEY/OPEN_AI_API_KEY missing")
-            ok = False
-        else:
-            _ok("health: OPENAI_API_KEY present for STT")
 
+def _check_openai(provider: str) -> bool:
+    if provider != "stt":
+        return True
+    openai_key = (os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_AI_API_KEY") or "").strip()
+    if not openai_key:
+        _warn("health: TRANSCRIPT_PROVIDER=stt but OPENAI_API_KEY/OPEN_AI_API_KEY missing")
+        return False
+    _ok("health: OPENAI_API_KEY present for STT")
+    return True
+
+
+def _check_chunking(provider: str) -> bool:
+    if provider != "stt":
+        return True
     enable_chunk = os.getenv("TRANSCRIPT_ENABLE_CHUNKING", "true").strip().lower() in {
         "1",
         "true",
@@ -46,42 +49,46 @@ def main() -> int:
         "y",
         "on",
     }
-    if provider == "stt" and enable_chunk:
-        # Require ffmpeg/ffprobe for chunking
-        if not _has_cmd("ffmpeg") or not _has_cmd("ffprobe"):
-            _warn("health: chunking enabled but ffmpeg/ffprobe not found in PATH")
-            ok = False
-        else:
-            try:
-                subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
-                _ok("health: ffmpeg available")
-            except Exception:
-                _warn("health: ffmpeg check failed")
-                ok = False
+    if not enable_chunk:
+        return True
+    if not _has_cmd("ffmpeg") or not _has_cmd("ffprobe"):
+        _warn("health: chunking enabled but ffmpeg/ffprobe not found in PATH")
+        return False
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
+        _ok("health: ffmpeg available")
+        return True
+    except Exception:
+        _warn("health: ffmpeg check failed")
+        return False
 
-    # Upstash Redis REST (optional)
-    upstash_url = (os.getenv("UPSTASH_REDIS_REST_URL") or "").strip()
-    upstash_token = (os.getenv("UPSTASH_REDIS_REST_TOKEN") or "").strip()
-    if upstash_url and upstash_token:
-        try:
-            import httpx  # type: ignore
 
-            with httpx.Client(timeout=5.0) as client:
-                r = client.get(
-                    upstash_url.rstrip("/") + "/ping",
-                    headers={"Authorization": f"Bearer {upstash_token}"},
-                )
-                if r.status_code == 200:
-                    _ok("health: Upstash REST reachable")
-                else:
-                    _warn(f"health: Upstash REST returned {r.status_code}: {r.text[:120]}")
-                    ok = False
-        except Exception as e:
-            _warn(f"health: Upstash REST check failed: {e}")
-            ok = False
-    else:
-        _warn("health: Upstash not configured (using memory queue)")
+def _check_redis() -> bool:
+    redis_url = (os.getenv("REDIS_URL") or "").strip()
+    if not redis_url:
+        _warn("health: Redis not configured")
+        return False
+    try:
+        import redis
 
+        r = redis.Redis.from_url(redis_url, socket_timeout=5)
+        if r.ping():
+            _ok("health: Redis protocol reachable")
+            return True
+        _warn("health: Redis protocol ping failed")
+        return False
+    except Exception as e:
+        _warn(f"health: Redis protocol check failed: {e}")
+        return False
+
+
+def main() -> int:
+    ok = True
+    ok &= _check_discord_token()
+    provider = (os.getenv("TRANSCRIPT_PROVIDER") or "youtube").strip().lower()
+    ok &= _check_openai(provider)
+    ok &= _check_chunking(provider)
+    ok &= _check_redis()
     return 0 if ok else 1
 
 
