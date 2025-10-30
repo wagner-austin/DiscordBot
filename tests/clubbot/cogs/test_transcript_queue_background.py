@@ -7,6 +7,7 @@ import pytest
 from discord.ext import commands
 from src.clubbot.cogs.transcript import TranscriptCog
 from src.clubbot.config import Config
+from src.clubbot.services.jobs.queue import MemoryJobQueue, TranscriptJob
 from src.clubbot.services.transcript.types import TranscriptResult
 
 
@@ -91,7 +92,7 @@ async def test_transcript_stt_enqueues_and_dms_user(monkeypatch: pytest.MonkeyPa
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg()
     svc = FakeTranscriptService()
-    cog = TranscriptCog(bot, cfg, svc)  # type: ignore[arg-type]
+    cog = TranscriptCog(bot, cfg, svc, queue=MemoryJobQueue[TranscriptJob]())
 
     # Patch bot.fetch_user to capture DM
     fake_user = FakeUser()
@@ -109,7 +110,7 @@ async def test_transcript_stt_enqueues_and_dms_user(monkeypatch: pytest.MonkeyPa
     first = interaction.calls[-1]
     assert "Queued transcription" in (first.get("message") or "")
 
-    # Let background worker process (polling); wait up to ~2.5s
+    # Let background worker process (test queue); wait up to ~2.5s
     for _ in range(50):
         if fake_user.dm:
             break
