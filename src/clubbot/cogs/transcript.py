@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import io
 import logging
-import os
 import time
 
 import discord
@@ -33,6 +32,7 @@ class TranscriptCog(BaseCog):
         bot: commands.Bot,
         config: Config,
         transcript_service: TranscriptService,
+        queue: JobQueueProto[TranscriptJob] | None = None,
     ) -> None:
         super().__init__()
         self.bot = bot
@@ -43,14 +43,10 @@ class TranscriptCog(BaseCog):
             getattr(config, "TRANSCRIPT_RATE_WINDOW_SECONDS", 60),
         )
         # Background job queue and runner
-        self._queue: JobQueueProto[TranscriptJob] = build_queue()
+        self._queue: JobQueueProto[TranscriptJob] = queue or build_queue()
         # Announce queue backend for observability
-        if os.getenv("UPSTASH_REDIS_REST_URL") and os.getenv("UPSTASH_REDIS_REST_TOKEN"):
-            logging.getLogger(__name__).info(
-                "Queue backend: Upstash REST (commands endpoints) with memory fallback"
-            )
-        else:
-            logging.getLogger(__name__).info("Queue backend: Memory (Upstash not configured)")
+        backend_name = type(self._queue).__name__
+        logging.getLogger(__name__).info(f"Queue backend: {backend_name}")
         # Build standardized failure and retry behavior for transcript jobs
         failure_cb = failure_notifier_factory(
             notify_fn=self.notify_user,
@@ -67,7 +63,7 @@ class TranscriptCog(BaseCog):
             max_concurrency=1,
             retry_attempts=1,
             retry_backoff=1.0,
-            poll_interval=2.0,
+            idle_sleep=0.5,
             logger=logging.getLogger(__name__),
         )
         self._runner.start()
