@@ -42,31 +42,42 @@ class TranscriptCog(BaseCog):
             getattr(config, "TRANSCRIPT_RATE_LIMIT", 2),
             getattr(config, "TRANSCRIPT_RATE_WINDOW_SECONDS", 60),
         )
-        # Background job queue and runner
-        self._queue: JobQueueProto[TranscriptJob] = queue or build_queue()
-        # Announce queue backend for observability
-        backend_name = type(self._queue).__name__
-        logging.getLogger(__name__).info(f"Queue backend: {backend_name}")
-        # Build standardized failure and retry behavior for transcript jobs
-        failure_cb = failure_notifier_factory(
-            notify_fn=self.notify_user,
-            user_error_type=UserInputError,
-            service_name="transcription",
-        )
-        retry_policy = default_retry_policy_factory(UserInputError)
+        # Background job queue and runner (enabled for STT provider or when injected)
+        self._queue: JobQueueProto[TranscriptJob] | None = None
+        self._runner: JobRunner[TranscriptJob] | None = None
+        provider = (self.config.TRANSCRIPT_PROVIDER or "youtube").strip().lower()
+        if queue is not None:
+            self._queue = queue
+        elif provider == "stt":
+            self._queue = build_queue(
+                brpop_timeout_seconds=getattr(self.config, "JOB_QUEUE_BRPOP_TIMEOUT_SECONDS", 0)
+            )
+        if self._queue is not None:
+            backend_name = type(self._queue).__name__
+            logging.getLogger(__name__).info(f"Queue backend: {backend_name}")
+            failure_cb = failure_notifier_factory(
+                notify_fn=self.notify_user,
+                user_error_type=UserInputError,
+                service_name="transcription",
+            )
+            retry_policy = default_retry_policy_factory(UserInputError)
 
-        self._runner = JobRunner[TranscriptJob](
-            queue=self._queue,
-            handler=self._handle_job,
-            failure_callback=failure_cb,
-            retry_policy=retry_policy,
-            max_concurrency=1,
-            retry_attempts=1,
-            retry_backoff=1.0,
-            idle_sleep=0.5,
-            logger=logging.getLogger(__name__),
-        )
-        self._runner.start()
+            self._runner = JobRunner[TranscriptJob](
+                queue=self._queue,
+                handler=self._handle_job,
+                failure_callback=failure_cb,
+                retry_policy=retry_policy,
+                max_concurrency=1,
+                retry_attempts=1,
+                retry_backoff=1.0,
+                idle_sleep=0.5,
+                logger=logging.getLogger(__name__),
+            )
+            self._runner.start()
+        else:
+            logging.getLogger(__name__).info(
+                "Queue backend disabled (provider not using background jobs)"
+            )
 
     @app_commands.command(
         name="transcript",
@@ -206,7 +217,9 @@ class TranscriptCog(BaseCog):
                 )
                 return True
 
-        # Queue the job
+        # Ensure queue is initialized for STT mode and enqueue the job
+        if self._queue is None:
+            raise RuntimeError("Background queue not initialized for STT provider")
         await self._queue.enqueue(
             TranscriptJob(request_id=req_id, url=url, user_id=user_id, queued_ts=time.time())
         )
