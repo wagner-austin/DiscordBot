@@ -43,6 +43,7 @@ T = TypeVar("T", bound=JobBase)
 class JobQueueProto(Protocol, Generic[T]):
     async def enqueue(self, job: T) -> None: ...
     async def pop(self) -> T | None: ...
+    def is_blocking(self) -> bool: ...
 
 
 class MemoryJobQueue(Generic[T], JobQueueProto[T]):
@@ -60,12 +61,16 @@ class MemoryJobQueue(Generic[T], JobQueueProto[T]):
         except asyncio.QueueEmpty:
             return None
 
+    def is_blocking(self) -> bool:
+        # In-memory queue does not block; caller should sleep between polls.
+        return False
 
-def build_queue() -> JobQueueProto[TranscriptJob]:
+
+def build_queue(*, brpop_timeout_seconds: int | None = None) -> JobQueueProto[TranscriptJob]:
     url = (os.getenv("REDIS_URL") or "").strip()
     if not url:
         raise RuntimeError("REDIS_URL is required for the queue backend")
-    return RedisJobQueue(url=url)
+    return RedisJobQueue(url=url, brpop_timeout_seconds=brpop_timeout_seconds)
 
 
 class _JobPayload(TypedDict, total=False):
@@ -106,7 +111,13 @@ class RedisJobQueue(JobQueueProto[TranscriptJob]):
     - `REDIS_URL` (e.g., rediss://default:password@host:port)
     """
 
-    def __init__(self, *, key: str = "transcript:jobs", url: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        key: str = "transcript:jobs",
+        url: str | None = None,
+        brpop_timeout_seconds: int | None = None,
+    ) -> None:
         self._logger = logging.getLogger(__name__)
         self._key = key
         self._url = (url or os.getenv("REDIS_URL") or "").strip()
@@ -114,6 +125,8 @@ class RedisJobQueue(JobQueueProto[TranscriptJob]):
             raise RuntimeError("Redis URL not configured")
         # Decode responses as str for JSON parsing
         self._client: _RedisClientProto = _redis_from_url(self._url)
+        # Blocking pop timeout: 0 = indefinite (recommended). If None provided, default to 0.
+        self._brpop_timeout_seconds: int = int(brpop_timeout_seconds or 0)
 
     async def enqueue(self, job: TranscriptJob) -> None:
         payload = json.dumps(job.__dict__, separators=(",", ":"))
@@ -122,7 +135,7 @@ class RedisJobQueue(JobQueueProto[TranscriptJob]):
     async def pop(self) -> TranscriptJob | None:
         # Block until a job is available; cancellation stops the worker cleanly
         try:
-            res = await self._client.brpop(self._key, timeout=5)
+            res = await self._client.brpop(self._key, timeout=self._brpop_timeout_seconds)
         except asyncio.CancelledError:
             raise
         if not res:
@@ -131,3 +144,7 @@ class RedisJobQueue(JobQueueProto[TranscriptJob]):
         if isinstance(value, str):
             return _parse_job_payload(value)
         return None
+
+    def is_blocking(self) -> bool:
+        # BRPOP is a blocking operation regardless of timeout; 0 = indefinite.
+        return True
