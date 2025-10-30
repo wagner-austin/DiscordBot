@@ -7,8 +7,8 @@ This bot uses a small, typed job runner and queues to perform background work (e
 - `JobBase` (Protocol)
   - Required job fields: `request_id: str`, `user_id: int`.
 - `JobQueueProto[T: JobBase]`
-  - Implementations: `MemoryJobQueue[T]` (default) and `UpstashJobQueue` (behind a simple REST interface).
-  - `build_queue()` returns an Upstash+Memory fallback or pure memory queue based on env.
+  - Implementation: `RedisJobQueue` — Redis protocol (BRPOP listener; zero idle polls)
+  - `build_queue()` requires `REDIS_URL` and returns a `RedisJobQueue`.
 - `JobRunner[T: JobBase]`
   - Executes jobs with a single handler coroutine.
   - Hooks:
@@ -41,7 +41,7 @@ async def handle(job: MyJob) -> None:
 3) Construct the runner with shared hooks:
 
 ```py
-queue = build_queue()  # Memory or Upstash fallback
+queue = build_queue()  # Requires REDIS_URL; Redis listener
 runner = JobRunner[MyJob](
     queue=queue,
     handler=handle,
@@ -61,6 +61,14 @@ runner.start()
 ```py
 await queue.enqueue(MyJob(request_id=req_id, user_id=user_id, payload="..."))
 ```
+
+### Listener Model
+
+- With `RedisJobQueue`, the consumer uses `BRPOP` to block until work arrives, eliminating idle polling traffic.
+
+### Configuration
+
+- `REDIS_URL` (e.g., `rediss://default:<password>@<host>:<port>`)
 
 ## Guarantees
 
