@@ -142,65 +142,57 @@ ffmpeg -i input.webm \
 
 ### 2. ParallelTranscriber (`parallel.py`)
 
-Purpose: process multiple chunks concurrently with rate limiting using threads to match the synchronous OpenAI client used by STTTranscriptProvider.
+Purpose: process multiple chunks concurrently using a thread pool to match the synchronous Whisper API call path, with retries and timeouts.
 
-Key methods:
-`python
+Key shape (matches code):
+```python
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import BinaryIO, Literal, Protocol
+
+class TranscribeFn(Protocol):
+    def __call__(
+        *,
+        model: str,
+        file: BinaryIO,
+        response_format: Literal["verbose_json"],
+        timeout: float | None = None,
+    ) -> object: ...
 
 class ParallelTranscriber:
     def __init__(
         self,
-        client: OpenAI,
+        *,
+        transcribe: TranscribeFn,
         max_concurrent: int = 3,
         max_retries: int = 2,
         timeout_seconds: float = 900.0,
         logger: logging.Logger | None = None,
     ) -> None:
-        self._client = client
-        self._max_concurrent = max(1, int(max_concurrent))
-        self._max_retries = max(0, int(max_retries))
-        self._timeout = float(timeout_seconds)
-        self._logger = logger or logging.getLogger(__name__)
+        self._transcribe = transcribe
+        ...
 
     def transcribe_chunks(self, chunks: list[AudioChunk]) -> list[TranscriptSegmentList]:
-        """Transcribe all chunks with bounded parallelism and retries."""
         def work(chunk: AudioChunk) -> TranscriptSegmentList:
             attempt = 0
             while True:
                 attempt += 1
                 try:
                     with open(chunk.path, "rb") as f:
-                        resp = self._client.audio.transcriptions.create(
-                            model="whisper-1",
-                            file=f,
-                            response_format="verbose_json",
-                            timeout=self._timeout,
+                        resp = self._transcribe(
+                            model="whisper-1", file=f, response_format="verbose_json", timeout=self._timeout
                         )
                     return _convert_verbose_to_segments(resp)
                 except Exception as e:
                     if attempt <= self._max_retries:
-                        self._logger.debug(
-                            "Retrying chunk start=%.2fs attempt=%d error=%s",
-                            chunk.start_seconds,
-                            attempt,
-                            e,
-                        )
+                        ...
                         continue
                     raise
-
-        out: list[TranscriptSegmentList] = [list() for _ in chunks]
-        with ThreadPoolExecutor(max_workers=self._max_concurrent) as pool:
-            futures = {pool.submit(work, c): i for i, c in enumerate(chunks)}
-            for fut in as_completed(futures):
-                idx = futures[fut]
-                out[idx] = fut.result()
-        return out
+        ...
 ```
 Rate limiting considerations:
-- OpenAI rate limits: 3 concurrent requests (safe default). Keep configurable.
-- API timeout: use TRANSCRIPT_STT_API_TIMEOUT_SECONDS per chunk.
-- Retry logic: use provider-level max_retries.
+- OpenAI Whisper: keep concurrency modest (default 3). Configurable.
+- API timeout: use `TRANSCRIPT_STT_API_TIMEOUT_SECONDS` per chunk.
+- Retry logic: use provider-level `max_retries`.
 - Progress tracking: log start/completion per chunk.
 
 Error handling:
