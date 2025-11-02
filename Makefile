@@ -1,4 +1,4 @@
-﻿.PHONY: help install install-dev lock run serve test invite env lint lint-fix format typecheck check commands validate-transcript
+﻿.PHONY: help install install-dev lock run serve test invite env lint lint-fix format check commands validate-transcript
 
 help:
 	@echo "Targets:"
@@ -10,6 +10,7 @@ help:
 	@echo "  make invite    - Print OAuth2 invite URL"
 	@echo "  make env       - Show required env vars"
 	@echo "  make validate-transcript URL=<youtube-url>  - Fetch + clean transcript via provider"
+	@echo "  make worker    - Run RQ worker (transcript queue)"
 	@echo "  make start     - Build + start Docker Compose stack (PowerShell)"
 	@echo "  make stop      - Stop Docker Compose stack (PowerShell)"
 	@echo "  make clean     - Stop, prune, rebuild stack from scratch (PowerShell)"
@@ -32,7 +33,9 @@ run:
 serve: run
 
 test: install-dev
-	poetry run pytest -q
+	poetry run pytest --cov=src --cov-report=term-missing
+
+tests: test
 
 invite:
 	poetry run python scripts/invite.py
@@ -57,21 +60,15 @@ validate-transcript: install-dev
 
 lint:
 	poetry run ruff check . --fix
-
-lint-fix:
-	poetry run ruff check . --fix
-
-format:
-	poetry run ruff format .
-
-typecheck:
-	poetry run mypy
-
-check: install-dev
-	-poetry run ruff check . --fix
 	poetry run ruff format .
 	poetry run mypy
-	poetry run pytest -q
+
+check: lint | test
+	
+
+
+worker: install
+	poetry run rq worker transcript --with-scheduler
 
 start:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/docker-start.ps1
@@ -81,5 +78,13 @@ stop:
 
 clean:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/docker-clean.ps1
-
+
+
+
+
+
+
+
+
+
 
