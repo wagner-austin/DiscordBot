@@ -18,10 +18,12 @@ openai = "^1.51.2"
 rich = "^13.7.1"
 httpx = "^0.27.2"
 redis = "^5.0.7"
+rq = "^1.16.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
 pytest-asyncio = "^0.21.1"
+pytest-cov = "^4.1.0"
 ruff = "^0.6.4"
 mypy = "^1.11.2"
 types-Pillow = "^10.2.0.20240822"
@@ -93,3 +95,11 @@ module = [
   "redis.*",
 ]
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
