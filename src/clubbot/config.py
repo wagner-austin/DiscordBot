@@ -60,6 +60,15 @@ class Config:
     TRANSCRIPT_SILENCE_DURATION_SECONDS: float = 0.5
     # Job queue configuration (Redis BRPOP listener)
     JOB_QUEUE_BRPOP_TIMEOUT_SECONDS: int = 0  # 0 = indefinite block
+    # RQ / Worker configuration
+    REDIS_URL: str | None = None
+    RQ_TRANSCRIPT_JOB_TIMEOUT_SEC: int = 600
+    RQ_TRANSCRIPT_RESULT_TTL_SEC: int = 86400
+    RQ_TRANSCRIPT_FAILURE_TTL_SEC: int = 604800
+    RQ_TRANSCRIPT_RETRY_MAX: int = 2
+    RQ_TRANSCRIPT_RETRY_INTERVALS_SEC: tuple[int, int] = (60, 300)
+    TRANSCRIPT_EVENTS_CHANNEL: str = "transcript:events"
+    TRANSCRIPT_RESULT_KEY_PREFIX: str = "transcript:result:"
 
 
 def _parse_guilds() -> tuple[str | None, list[int]]:
@@ -163,6 +172,16 @@ def load_config() -> Config:
 
     # Use code default for transcript max length (no env or file override)
     secs_value = 5400
+
+    # Parse RQ retry intervals as tuple[int, int]
+    intervals_raw = os.getenv("RQ_TRANSCRIPT_RETRY_INTERVALS_SEC", "60,300").strip()
+    parts = [p for p in re.split(r"[\s,]+", intervals_raw) if p]
+    try:
+        retry_intervals: tuple[int, int] = (
+            (int(parts[0]), int(parts[1])) if len(parts) >= 2 else (60, 300)
+        )
+    except ValueError:
+        retry_intervals = (60, 300)
 
     return Config(
         DISCORD_TOKEN=_s("DISCORD_TOKEN", ""),
@@ -330,6 +349,37 @@ def load_config() -> Config:
             )
         ),
         JOB_QUEUE_BRPOP_TIMEOUT_SECONDS=_i("JOB_QUEUE_BRPOP_TIMEOUT_SECONDS", 0),
+        REDIS_URL=str(file_overrides.get("REDIS_URL") or (os.getenv("REDIS_URL") or "")).strip()
+        or None,
+        RQ_TRANSCRIPT_JOB_TIMEOUT_SEC=_from_overrides_int(
+            file_overrides,
+            "RQ_TRANSCRIPT_JOB_TIMEOUT_SEC",
+            _i("RQ_TRANSCRIPT_JOB_TIMEOUT_SEC", 600),
+        ),
+        RQ_TRANSCRIPT_RESULT_TTL_SEC=_from_overrides_int(
+            file_overrides,
+            "RQ_TRANSCRIPT_RESULT_TTL_SEC",
+            _i("RQ_TRANSCRIPT_RESULT_TTL_SEC", 86400),
+        ),
+        RQ_TRANSCRIPT_FAILURE_TTL_SEC=_from_overrides_int(
+            file_overrides,
+            "RQ_TRANSCRIPT_FAILURE_TTL_SEC",
+            _i("RQ_TRANSCRIPT_FAILURE_TTL_SEC", 604800),
+        ),
+        RQ_TRANSCRIPT_RETRY_MAX=_from_overrides_int(
+            file_overrides,
+            "RQ_TRANSCRIPT_RETRY_MAX",
+            _i("RQ_TRANSCRIPT_RETRY_MAX", 2),
+        ),
+        RQ_TRANSCRIPT_RETRY_INTERVALS_SEC=retry_intervals,
+        TRANSCRIPT_EVENTS_CHANNEL=str(
+            file_overrides.get("TRANSCRIPT_EVENTS_CHANNEL")
+            or os.getenv("TRANSCRIPT_EVENTS_CHANNEL", "transcript:events")
+        ),
+        TRANSCRIPT_RESULT_KEY_PREFIX=str(
+            file_overrides.get("TRANSCRIPT_RESULT_KEY_PREFIX")
+            or os.getenv("TRANSCRIPT_RESULT_KEY_PREFIX", "transcript:result:")
+        ),
     )
 
 
