@@ -9,9 +9,17 @@ services:
     volumes:
       - metrics:/app/data
     restart: unless-stopped
+  worker:
+    image: clubbot:latest
+    container_name: clubbot-worker
+    env_file:
+      - .env
+    volumes:
+      - metrics:/app/data
+    command: poetry run rq worker transcript --with-scheduler
+    restart: unless-stopped
 
 volumes:
   metrics:
     external: true
     name: clubbot_metrics
-
