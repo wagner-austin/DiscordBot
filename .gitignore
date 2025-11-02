@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
+# Coverage
+.coverage
+
 # Environments
 .env
 .env.*
@@ -29,4 +32,3 @@ nul
 
 # Local cookies (never commit)
 youtube-cookies.txt
-
