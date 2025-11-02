@@ -83,9 +83,12 @@ src/clubbot/
   container.py          # Service container (DI composition)
   services/qr_service.py# QR generation (qrcode + Pillow)
   services/qr_logic.py  # Resolve options & defaults
-  services/jobs/queue.py# Redis-backed job queue (listener via BRPOP; indefinite block by default)
+  services/jobs/queue.py# Legacy BRPOP queue (kept for tests; STT uses RQ)
   services/jobs/runner.py# Generic job runner with retry/failure hooks
   services/jobs/helpers.py# Failure notifier and retry-policy factories (typed)
+  services/jobs/rq_enqueuer.py# RQ enqueue adapter (STT)
+  services/jobs/notifier.py# Redis pub/sub event subscriber (DM results)
+  workers/transcript.py# RQ worker entrypoint
   services/transcript/   # Transcript providers (YouTube captions, STT)
   utils/validators.py   # Input validation
   utils/errors.py       # Error types
@@ -130,8 +133,17 @@ src/clubbot/
   - `QR_PUBLIC_RESPONSES` (default `true`) - set to `false` to make success responses ephemeral
 
 - Queues
-  - `REDIS_URL` — Redis protocol (listener via BRPOP; required only when `TRANSCRIPT_PROVIDER=stt`)
-  - `JOB_QUEUE_BRPOP_TIMEOUT_SECONDS` — BRPOP timeout, default `0` (indefinite block). Increase only if your provider drops long-idle connections.
+  - RQ / Events (STT)
+    - `REDIS_URL` - Redis connection (required when `TRANSCRIPT_PROVIDER=stt`)
+    - `RQ_TRANSCRIPT_JOB_TIMEOUT_SEC` (default `600`) - per-job timeout
+    - `RQ_TRANSCRIPT_RESULT_TTL_SEC` (default `86400`) - TTL for stored transcript text
+    - `RQ_TRANSCRIPT_FAILURE_TTL_SEC` (default `604800`) - TTL for failed job records
+    - `RQ_TRANSCRIPT_RETRY_MAX` (default `2`) and `RQ_TRANSCRIPT_RETRY_INTERVALS_SEC` (default `60,300`) - bounded retries
+    - `TRANSCRIPT_EVENTS_CHANNEL` (default `transcript:events`) - Redis pub/sub channel for completion/failure
+    - `TRANSCRIPT_RESULT_KEY_PREFIX` (default `transcript:result:`) - Redis key prefix for transcript text
+    - `TRANSCRIPT_MAX_ATTACHMENT_MB` (default `25`) - DM attachment size cap
+  - Legacy (BRPOP)
+    - `JOB_QUEUE_BRPOP_TIMEOUT_SECONDS` - BRPOP timeout, default `0` (indefinite block). Only relevant for legacy queue/tests.
 
 - Transcript
   - `TRANSCRIPT_PROVIDER` (default `youtube`; set `stt` to enable speech-to-text)
@@ -172,7 +184,14 @@ Behavior
 - For user validation errors, raise/catch `UserInputError` and use `await self.handle_user_error(interaction, log, message)`.
 - For unexpected exceptions, use `await self.handle_exception(interaction, log, exc)`.
 
-### Background Jobs (Typed, Reusable)
+### Background Jobs (RQ + Events)
+- STT provider uses RQ for durable jobs; YouTube provider runs inline.
+- Enqueue STT jobs via `services/jobs/rq_enqueuer.py` (returns `job_id`).
+- A separate RQ worker executes `workers/transcript.py:process_transcript_job` and publishes events.
+- The bot subscribes via `services/jobs/notifier.py` and DMs users on completion/failure.
+- Legacy BRPOP queue/runner remain for tests; new background work for STT should use RQ.
+
+### Background Jobs (Legacy BRPOP)
 - Define a job dataclass implementing `JobBase` (fields: `request_id: str`, `user_id: int`).
 - Use `JobRunner` with typed hooks:
   - `failure_callback(job, exc, attempt, will_retry)` - see `services/jobs/helpers.py` to DM users on failures.
