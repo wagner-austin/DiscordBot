@@ -16,7 +16,9 @@ from ..services.jobs.helpers import (
     default_retry_policy_factory,
     failure_notifier_factory,
 )
-from ..services.jobs.queue import JobQueueProto, TranscriptJob, build_queue
+from ..services.jobs.notifier import TranscriptEventSubscriber
+from ..services.jobs.queue import JobQueueProto, TranscriptJob
+from ..services.jobs.rq_enqueuer import RQTranscriptEnqueuer, TranscriptEnqueuer
 from ..services.jobs.runner import JobRunner
 from ..services.transcript.app import TranscriptService
 from ..services.transcript.types import SupportsEstimate
@@ -45,13 +47,41 @@ class TranscriptCog(BaseCog):
         # Background job queue and runner (enabled for STT provider or when injected)
         self._queue: JobQueueProto[TranscriptJob] | None = None
         self._runner: JobRunner[TranscriptJob] | None = None
+        self._enqueuer: TranscriptEnqueuer | None = None
+        self._subscriber: TranscriptEventSubscriber | None = None
         provider = (self.config.TRANSCRIPT_PROVIDER or "youtube").strip().lower()
         if queue is not None:
             self._queue = queue
         elif provider == "stt":
-            self._queue = build_queue(
-                brpop_timeout_seconds=getattr(self.config, "JOB_QUEUE_BRPOP_TIMEOUT_SECONDS", 0)
+            # RQ-mode for STT when no queue injected for tests: set up enqueuer and subscriber
+            redis_url = (getattr(self.config, "REDIS_URL", None) or "").strip()
+            if not redis_url:
+                raise RuntimeError("REDIS_URL is required for STT transcription")
+            retry_intervals = getattr(self.config, "RQ_TRANSCRIPT_RETRY_INTERVALS_SEC", (60, 300))
+            interval_tuple = (
+                (int(retry_intervals[0]), int(retry_intervals[1]))
+                if isinstance(retry_intervals, tuple)
+                else (60, 300)
             )
+            self._enqueuer = RQTranscriptEnqueuer(
+                redis_url=redis_url,
+                queue_name="transcript",
+                job_timeout_s=int(getattr(self.config, "RQ_TRANSCRIPT_JOB_TIMEOUT_SEC", 600)),
+                result_ttl_s=int(getattr(self.config, "RQ_TRANSCRIPT_RESULT_TTL_SEC", 86400)),
+                failure_ttl_s=int(getattr(self.config, "RQ_TRANSCRIPT_FAILURE_TTL_SEC", 604800)),
+                retry_max=int(getattr(self.config, "RQ_TRANSCRIPT_RETRY_MAX", 2)),
+                retry_intervals_s=interval_tuple,
+            )
+            # Start subscriber to DM users on completion/failure
+            channel = getattr(self.config, "TRANSCRIPT_EVENTS_CHANNEL", "transcript:events")
+            max_mb = int(getattr(self.config, "TRANSCRIPT_MAX_ATTACHMENT_MB", 25))
+            self._subscriber = TranscriptEventSubscriber(
+                self.bot,
+                redis_url=redis_url,
+                events_channel=channel,
+                max_attachment_mb=max_mb,
+            )
+            self._subscriber.start()
         if self._queue is not None:
             backend_name = type(self._queue).__name__
             logging.getLogger(__name__).info(f"Queue backend: {backend_name}")
@@ -76,7 +106,7 @@ class TranscriptCog(BaseCog):
             self._runner.start()
         else:
             logging.getLogger(__name__).info(
-                "Queue backend disabled (provider not using background jobs)"
+                "Queue backend disabled (provider not using background jobs or using RQ)"
             )
 
     @app_commands.command(
@@ -165,6 +195,38 @@ class TranscriptCog(BaseCog):
         limit_mb = self._get_attachment_limit_mb()
         return limit_mb > 0 and len(data) > limit_mb * 1024 * 1024
 
+    def _check_duration_limit(self, dur_s: int) -> str | None:
+        """Return a user-facing error message if duration exceeds the configured limit."""
+        max_secs = getattr(self.config, "TRANSCRIPT_MAX_VIDEO_SECONDS", 0)
+        if dur_s and max_secs > 0 and dur_s > max_secs:
+            allowed_min = max(1, int((max_secs + 59) // 60))
+            actual_min = max(1, int((dur_s + 59) // 60))
+            return (
+                f"Video is too long for STT transcription ({actual_min} min). "
+                f"Maximum allowed: {allowed_min} min."
+            )
+        return None
+
+    def _check_size_limit(self, approx_mb: float) -> str | None:
+        """Return a user-facing error message if size exceeds limit and chunking is unavailable."""
+        max_mb = float(getattr(self.config, "TRANSCRIPT_MAX_FILE_MB", 0))
+        chunking_enabled = bool(getattr(self.config, "TRANSCRIPT_ENABLE_CHUNKING", True))
+        if approx_mb and max_mb > 0 and approx_mb > max_mb:
+            can_chunk = False
+            if chunking_enabled:
+                try:
+                    from shutil import which  # local import to avoid global dependency
+
+                    can_chunk = bool(which("ffmpeg") and which("ffprobe"))
+                except Exception:  # pragma: no cover - environment dependent
+                    can_chunk = False
+            if not can_chunk:
+                return (
+                    f"Audio file is estimated at ~{int(approx_mb)} MB, which exceeds "
+                    f"Whisper API's {int(max_mb)} MB limit. Try a shorter video."
+                )
+        return None
+
     async def _handle_stt_request(
         self,
         *,
@@ -181,48 +243,25 @@ class TranscriptCog(BaseCog):
             dur_s, approx_mb = 0, 0.0
 
         # Early user-facing validation using estimates when available
-        max_secs = getattr(self.config, "TRANSCRIPT_MAX_VIDEO_SECONDS", 0)
-        if dur_s and max_secs > 0 and dur_s > max_secs:
-            allowed_min = max(1, int((max_secs + 59) // 60))
-            actual_min = max(1, int((dur_s + 59) // 60))
-            await self.handle_user_error(
-                interaction,
-                log,
-                (
-                    f"Video is too long for STT transcription ({actual_min} min). "
-                    f"Maximum allowed: {allowed_min} min."
-                ),
-            )
+        msg = self._check_duration_limit(dur_s)
+        if msg:
+            await self.handle_user_error(interaction, log, msg)
             return True
 
-        max_mb = float(getattr(self.config, "TRANSCRIPT_MAX_FILE_MB", 0))
-        chunking_enabled = bool(getattr(self.config, "TRANSCRIPT_ENABLE_CHUNKING", True))
-        if approx_mb and max_mb > 0 and approx_mb > max_mb:
-            can_chunk = False
-            if chunking_enabled:
-                try:
-                    from shutil import which  # local import to avoid global dependency
+        msg = self._check_size_limit(approx_mb)
+        if msg:
+            await self.handle_user_error(interaction, log, msg)
+            return True
 
-                    can_chunk = bool(which("ffmpeg") and which("ffprobe"))
-                except Exception:
-                    can_chunk = False
-            if not can_chunk:
-                await self.handle_user_error(
-                    interaction,
-                    log,
-                    (
-                        f"Audio file is estimated at ~{int(approx_mb)} MB, which exceeds "
-                        f"Whisper API's {int(max_mb)} MB limit. Try a shorter video."
-                    ),
-                )
-                return True
-
-        # Ensure queue is initialized for STT mode and enqueue the job
-        if self._queue is None:
-            raise RuntimeError("Background queue not initialized for STT provider")
-        await self._queue.enqueue(
-            TranscriptJob(request_id=req_id, url=url, user_id=user_id, queued_ts=time.time())
-        )
+        # Enqueue via RQ enqueuer when available; otherwise fall back to injected queue (tests)
+        if self._enqueuer is not None:
+            _ = self._enqueuer.enqueue_transcript(request_id=req_id, url=url, user_id=user_id)
+        elif self._queue is not None:
+            await self._queue.enqueue(
+                TranscriptJob(request_id=req_id, url=url, user_id=user_id, queued_ts=time.time())
+            )
+        else:
+            raise RuntimeError("No background job backend configured for STT provider")
         est_min = max(1, int((dur_s + 59) // 60)) if dur_s else "?"
         # Estimate transcript size (KB)
         kbpm = float(getattr(self.config, "TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN", 1.0))
@@ -252,6 +291,14 @@ class TranscriptCog(BaseCog):
         )
         log.info("Queued STT job req=%s url=%s", req_id, url[:50])
         return True
+
+    async def cog_unload(self) -> None:  # pragma: no cover - lifecycle
+        try:
+            if self._runner is not None:
+                await self._runner.stop()
+        finally:
+            if self._subscriber is not None:
+                await self._subscriber.stop()
 
     async def _handle_job(self, job: TranscriptJob) -> None:
         start = time.perf_counter()
