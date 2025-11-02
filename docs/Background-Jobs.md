@@ -1,89 +1,85 @@
-# Background Jobs (Typed, Reusable)
+# Background Jobs (RQ + Events)
 
-This bot uses a small, typed job runner and queues to perform background work (e.g., transcribing audio) without blocking Discord interactions. The design enforces clear user notifications and strict typing.
+This bot uses durable RQ jobs for STT transcription and handles user notifications via a Redis pub/sub event channel. The captions-only provider (YouTube) executes inline without any queue.
 
-## Components
+## Current Architecture
 
-- `JobBase` (Protocol)
-  - Required job fields: `request_id: str`, `user_id: int`.
-- `JobQueueProto[T: JobBase]`
-  - Implementation: `RedisJobQueue` — Redis protocol (BRPOP listener; zero idle polls with indefinite block)
-  - `build_queue(brpop_timeout_seconds=...)` constructs a `RedisJobQueue`. Default timeout is `0` (indefinite block).
-- `JobRunner[T: JobBase]`
-  - Executes jobs with a single handler coroutine.
-  - Hooks:
-    - `retry_policy(job, exc, attempt) -> bool` — decide if the runner should retry the failure.
-    - `failure_callback(job, exc, attempt, will_retry)` — notify users/log values when a failure occurs.
-- Helper factories (strict typing, no Any/casts):
-  - `default_retry_policy_factory(UserInputError)` — disables retries for user-caused errors.
-  - `failure_notifier_factory(notify_fn, service_name)` — DMs users on first user error or final system failure.
+- STT provider (durable):
+  - Enqueuer: `src/clubbot/services/jobs/rq_enqueuer.py` (`RQTranscriptEnqueuer`)
+  - Worker: `src/clubbot/workers/transcript.py:process_transcript_job`
+  - Events + result storage: `src/clubbot/services/jobs/events.py` (publish/subscribe + content key)
+  - Notifier (in bot process): `src/clubbot/services/jobs/notifier.py` (`TranscriptEventSubscriber`)
+- YouTube provider (inline):
+  - Runs in the interaction process; no Redis/RQ required.
 
-## Usage Pattern
+## How It Works (STT)
 
-1) Define a job type implementing `JobBase` (usually a dataclass):
+1) Bot process enqueues a job via RQ
 
 ```py
-@dataclass(frozen=True)
-class MyJob(JobBase):
-    request_id: str
-    user_id: int
-    payload: str
+from src.clubbot.services.jobs.rq_enqueuer import RQTranscriptEnqueuer
+
+enq = RQTranscriptEnqueuer(redis_url=cfg.REDIS_URL)
+job_id = enq.enqueue_transcript(request_id=req_id, url=url, user_id=user_id)
 ```
 
-2) Provide a handler (raise `UserInputError` for user-facing problems):
+- The job payload is strictly typed (`TranscriptPayload`: `request_id`, `url`, `user_id`).
+- Retry policy, timeouts, and TTLs are set at enqueue-time.
+
+2) Separate RQ worker process executes the job function
 
 ```py
-async def handle(job: MyJob) -> None:
-    # do work; raise UserInputError("bad input") for validation failures
-    ...
+# src/clubbot/workers/transcript.py
+def process_transcript_job(payload: TranscriptPayload) -> None:
+    # Calls TranscriptService.fetch_cleaned(url) off the event loop
+    # Publishes a completion/failed event and stores results in Redis
 ```
 
-3) Construct the runner with shared hooks:
+- On success: stores the transcript text in Redis using a key built from `TRANSCRIPT_RESULT_KEY_PREFIX` and publishes a `completed` event to `TRANSCRIPT_EVENTS_CHANNEL`.
+- On user error: publishes a `failed` event with `error_kind="user"` (no retry).
+- On system error: publishes a `failed` event with `error_kind="system"`, then re-raises so RQ retries according to policy.
+
+3) Bot process subscribes to events and DMs users
 
 ```py
-queue = build_queue(brpop_timeout_seconds=cfg.JOB_QUEUE_BRPOP_TIMEOUT_SECONDS)
-# Requires REDIS_URL; Redis listener. Timeout 0 = indefinite block.
-runner = JobRunner[MyJob](
-    queue=queue,
-    handler=handle,
-    failure_callback=failure_notifier_factory(
-        notify_fn=self.notify_user,  # BaseCog helper
-        service_name="my-service",
-    ),
-    retry_policy=default_retry_policy_factory(UserInputError),
-    retry_attempts=1,
-    retry_backoff=1.0,
-)
-runner.start()
+# src/clubbot/services/jobs/notifier.py
+subscriber = TranscriptEventSubscriber(bot, redis_url=cfg.REDIS_URL)
+subscriber.start()
 ```
 
-4) Enqueue jobs where appropriate:
+- On `completed`: fetches the transcript from Redis (by content key) and DMs it as a file.
+- On `failed`: DMs a user-facing explanation (user vs system).
 
-```py
-await queue.enqueue(MyJob(request_id=req_id, user_id=user_id, payload="..."))
-```
+## Configuration (STT + RQ)
 
-### Listener Model
+- `REDIS_URL` (required when `TRANSCRIPT_PROVIDER=stt`) — connection for both RQ and pub/sub.
+- `RQ_TRANSCRIPT_JOB_TIMEOUT_SEC` (default `600`) — per-job timeout.
+- `RQ_TRANSCRIPT_RESULT_TTL_SEC` (default `86400`) — TTL for stored transcript text.
+- `RQ_TRANSCRIPT_FAILURE_TTL_SEC` (default `604800`) — TTL for failed job records.
+- `RQ_TRANSCRIPT_RETRY_MAX` (default `2`) and `RQ_TRANSCRIPT_RETRY_INTERVALS_SEC` (default `60,300`) — bounded retries.
+- `TRANSCRIPT_EVENTS_CHANNEL` (default `transcript:events`) — Redis pub/sub channel.
+- `TRANSCRIPT_RESULT_KEY_PREFIX` (default `transcript:result:`) — Redis key prefix for transcript text.
+- `TRANSCRIPT_MAX_ATTACHMENT_MB` (default `25`) — DM attachment size cap.
 
-- With `RedisJobQueue`, the consumer uses `BRPOP` to block until work arrives. By default the timeout is 0 (indefinite), which eliminates idle polling traffic. Configure `JOB_QUEUE_BRPOP_TIMEOUT_SECONDS` only if your Redis provider requires periodic unblocking to keep connections healthy.
+Worker start (example): `rq worker transcript --with-scheduler`
 
-### When the Queue Is Active
+## Provider Behavior
 
-- The Transcript feature only starts the background worker (and initializes the Redis queue) when `TRANSCRIPT_PROVIDER=stt`, or when a queue is explicitly injected for tests. In caption-only mode (`youtube`), no Redis connection is created and no background worker runs.
+- `TRANSCRIPT_PROVIDER=youtube` — inline execution; no Redis dependency.
+- `TRANSCRIPT_PROVIDER=stt` — RQ-based durable transcription; requires `REDIS_URL`.
 
-### Configuration
+## Legacy (BRPOP Queue)
 
-- `REDIS_URL` (e.g., `rediss://default:<password>@<host>:<port>`) — required only when `TRANSCRIPT_PROVIDER=stt`.
-- `JOB_QUEUE_BRPOP_TIMEOUT_SECONDS` (default `0`) — BRPOP timeout; `0` means indefinite block. Increase only if your provider drops long-idle connections (e.g., set to `60`).
+A minimal BRPOP-based queue and runner remain in the codebase for historical and testing purposes:
+
+- Queue and runner: `src/clubbot/services/jobs/queue.py`, `src/clubbot/services/jobs/runner.py`, `src/clubbot/services/jobs/helpers.py`
+- Environment: `JOB_QUEUE_BRPOP_TIMEOUT_SECONDS` controls the BRPOP timeout (default `0` = indefinite).
+
+These components are not used for STT. The YouTube provider runs inline; tests may inject `MemoryJobQueue` or use the legacy queue for controlled scenarios. New background-job functionality for STT should use RQ as described above.
 
 ## Guarantees
 
-- User-caused errors (e.g., invalid inputs) are not retried and are DM’d immediately once.
-- System/transient errors retry based on `retry_attempts`; users are DM’d only on final failure.
-- No background job silently fails.
+- User-caused errors are not retried and generate a single DM notification.
+- System/transient errors are retried with backoff up to the configured limits; users are notified only on final failure.
+- No background job silently fails; success and failure states produce events and logs.
 
-## Code References
-
-- `src/clubbot/services/jobs/queue.py`
-- `src/clubbot/services/jobs/runner.py`
-- `src/clubbot/services/jobs/helpers.py`
