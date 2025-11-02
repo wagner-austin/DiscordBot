@@ -15,7 +15,7 @@ def _touch_file(bytes_size: int) -> str:
 
 
 class NoopProvider(STTTranscriptProvider):
-    def __post_init__(self) -> None:  # type: ignore[override]
+    def __post_init__(self) -> None:
         # Skip OpenAI client init for unit tests
         self._logger = __import__("logging").getLogger(__name__)
         self._client = None  # not used because we stub _transcribe
