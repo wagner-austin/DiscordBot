@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from typing import Any
+from typing import TypedDict
 
 import discord
 import pytest
@@ -40,6 +40,12 @@ class FakeResponse:
         self._parent.calls.append({"message": content, "file": None, "ephemeral": ephemeral})
 
 
+class _Call(TypedDict):
+    message: str
+    file: discord.File | None
+    ephemeral: bool
+
+
 class FakeFollowup:
     def __init__(self, parent: "FakeInteraction") -> None:
         self._parent = parent
@@ -47,12 +53,18 @@ class FakeFollowup:
     async def send(
         self, content: str = "", *, file: discord.File | None = None, ephemeral: bool = False
     ) -> None:
-        self._parent.calls.append({"message": content, "file": file, "ephemeral": ephemeral})
+        entry: _Call = {"message": content, "file": file, "ephemeral": ephemeral}
+        self._parent.calls.append(entry)
+
+
+class _DM(TypedDict):
+    message: str
+    file: discord.File | None
 
 
 class FakeUser:
     def __init__(self) -> None:
-        self.dm: list[dict[str, Any]] = []
+        self.dm: list[_DM] = []
 
     async def send(self, content: str, file: discord.File | None = None) -> None:
         self.dm.append({"message": content, "file": file})
@@ -60,7 +72,7 @@ class FakeUser:
 
 class FakeInteraction:
     def __init__(self, uid: int) -> None:
-        self.calls: list[dict[str, Any]] = []
+        self.calls: list[_Call] = []
         self.user = SimpleNamespace(id=uid)
         self.response = FakeResponse(self)
         self.followup = FakeFollowup(self)
@@ -97,10 +109,10 @@ async def test_transcript_stt_enqueues_and_dms_user(monkeypatch: pytest.MonkeyPa
     # Patch bot.fetch_user to capture DM
     fake_user = FakeUser()
 
-    async def fake_fetch_user(uid: int) -> FakeUser:  # type: ignore[override]
+    async def fake_fetch_user(uid: int) -> FakeUser:
         return fake_user
 
-    monkeypatch.setattr(bot, "fetch_user", fake_fetch_user)  # type: ignore[arg-type]
+    monkeypatch.setattr(bot, "fetch_user", fake_fetch_user)
 
     interaction = FakeInteraction(uid=42)
     await cog.transcript.callback(cog, interaction, "https://youtu.be/abc123xyz00")
@@ -122,4 +134,4 @@ async def test_transcript_stt_enqueues_and_dms_user(monkeypatch: pytest.MonkeyPa
 
     # Cleanup runner to avoid warnings
     if hasattr(cog, "_runner"):
-        await cog._runner.stop()  # type: ignore[attr-defined]
+        await cog._runner.stop()
