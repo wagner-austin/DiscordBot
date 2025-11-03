@@ -66,7 +66,7 @@ class RQTranscriptEnqueuer(TranscriptEnqueuer):
         q = Queue(self.queue_name, connection=conn)
         retry = Retry(max=self.retry_max, interval=list(self.retry_intervals_s))
         job: Job = q.enqueue(
-            "src.clubbot.workers.transcript.process_transcript_job",  # fully-qualified
+            "clubbot.workers.transcript.process_transcript_job",  # fully-qualified
             {
                 "request_id": request_id,
                 "url": url,
