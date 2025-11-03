@@ -58,9 +58,8 @@ class RQTranscriptEnqueuer(TranscriptEnqueuer):
     retry_intervals_s: tuple[int, int] = (60, 300)
 
     def enqueue_transcript(self, *, request_id: str, url: str, user_id: int) -> str:
-        from rq import Queue
+        from rq import Queue, Retry
         from rq.job import Job  # add local stubs if needed
-        from rq.retry import Retry
         import redis
 
         conn: redis.Redis[str] = redis.from_url(self.redis_url, decode_responses=True)
@@ -214,7 +213,7 @@ class TranscriptFailedEvent(TypedDict):
 - `src/clubbot/workers/transcript.py` — `process_transcript_job(payload)` worker function.
 - `src/clubbot/services/jobs/events.py` — TypedDicts for events, channel/key constants.
 - `src/clubbot/services/jobs/notifier.py` — Subscriber service that consumes events and DMs users.
-- `typings/rq/*.pyi` — minimal stubs for `rq.Queue`, `rq.job.Job`, `rq.retry.Retry` if needed to keep mypy strict with no Any/casts.
+- `typings/rq/*.pyi` — minimal stubs for `rq.Queue`, `rq.job.Job`, `rq.Retry` if needed to keep mypy strict with no Any/casts.
 
 ## Acceptance Criteria
 - A 90–180s transcription completes reliably even if the worker restarts mid-run (job is retried/requeued).
