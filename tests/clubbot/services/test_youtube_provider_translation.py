@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 import src.clubbot.services.transcript.provider as provider_mod
 from src.clubbot.services.transcript.provider import YouTubeTranscriptProvider
+from src.clubbot.services.transcript.types import TranscriptOptions
 from src.clubbot.utils.errors import UserInputError
 
 
@@ -16,17 +17,19 @@ class _FakeResource:
         return self._data
 
 
+class NoTranscriptFoundError(Exception):
+    pass
+
+
 class _ListingNoDirect:
     def __init__(self, can_translate: bool = True) -> None:
         self._can_translate = can_translate
 
     def find_transcript(self, languages: list[str]) -> None:
         # Simulate no direct transcript for preferred languages
-        from src.clubbot.services.transcript.provider import NoTranscriptFound
+        raise NoTranscriptFoundError()
 
-        raise NoTranscriptFound()
-
-    def translate(self, language: str):
+    def translate(self, language: str) -> _FakeResource:
         if not self._can_translate:
             raise RuntimeError("translate failed")
         return _FakeResource([{"text": "translated", "start": 0, "duration": 1}])
@@ -36,9 +39,6 @@ def test_translation_fallback_uses_translate(monkeypatch: pytest.MonkeyPatch) ->
     prov = YouTubeTranscriptProvider()
 
     # NoTranscriptFound on direct fetch
-    class NoTranscriptFoundError(Exception):
-        pass
-
     monkeypatch.setattr(provider_mod, "NoTranscriptFound", NoTranscriptFoundError, raising=True)
 
     def raising_get_transcript(*args: object, **kwargs: object) -> list[dict[str, object]]:
@@ -54,7 +54,7 @@ def test_translation_fallback_uses_translate(monkeypatch: pytest.MonkeyPatch) ->
         raising=True,
     )
 
-    out = prov.fetch("vid", SimpleNamespace(preferred_langs=["en"]))
+    out = prov.fetch("vid", TranscriptOptions(preferred_langs=["en"]))
     assert out and out[0].text == "translated"
 
 
@@ -62,9 +62,6 @@ def test_translation_fallback_raises_when_translate_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     prov = YouTubeTranscriptProvider()
-
-    class NoTranscriptFoundError(Exception):
-        pass
 
     monkeypatch.setattr(provider_mod, "NoTranscriptFound", NoTranscriptFoundError, raising=True)
 
@@ -82,14 +79,11 @@ def test_translation_fallback_raises_when_translate_fails(
     )
 
     with pytest.raises(UserInputError):
-        prov.fetch("vid", SimpleNamespace(preferred_langs=["en"]))
+        prov.fetch("vid", TranscriptOptions(preferred_langs=["en"]))
 
 
 def test_list_transcripts_error_mapped_to_user(monkeypatch: pytest.MonkeyPatch) -> None:
     prov = YouTubeTranscriptProvider()
-
-    class NoTranscriptFoundError(Exception):
-        pass
 
     class VideoUnavailableError(Exception):
         pass
@@ -100,7 +94,7 @@ def test_list_transcripts_error_mapped_to_user(monkeypatch: pytest.MonkeyPatch) 
     def raising_get_transcript(*args: object, **kwargs: object) -> list[dict[str, object]]:
         raise NoTranscriptFoundError()
 
-    def raising_list_transcripts(video_id: str):
+    def raising_list_transcripts(video_id: str) -> None:
         raise VideoUnavailableError()
 
     monkeypatch.setattr(
@@ -114,4 +108,4 @@ def test_list_transcripts_error_mapped_to_user(monkeypatch: pytest.MonkeyPatch) 
     )
 
     with pytest.raises(UserInputError):
-        prov.fetch("vid", SimpleNamespace(preferred_langs=["en"]))
+        prov.fetch("vid", TranscriptOptions(preferred_langs=["en"]))
