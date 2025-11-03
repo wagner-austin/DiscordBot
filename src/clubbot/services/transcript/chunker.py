@@ -103,10 +103,8 @@ class AudioChunker:
         for line in out.splitlines():
             m_end = _SILENCE_END_RE.search(line)
             if m_end:
-                try:
-                    points.append(float(m_end.group("ts")))
-                except ValueError:
-                    continue
+                # Regex only matches numeric timestamps, so conversion is safe
+                points.append(float(m_end.group("ts")))
         self._logger.debug("Detected %d silence points in %.1fs audio", len(points), duration)
         return points
 
