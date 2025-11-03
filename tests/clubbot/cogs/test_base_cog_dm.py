@@ -14,14 +14,14 @@ class _OkUser:
 
 class _OkBot:
     def __init__(self) -> None:
-        self.user = _OkUser()
+        self._u = _OkUser()
 
     async def fetch_user(self, user_id: int) -> _OkUser:
-        return self.user
+        return self._u
 
 
 class _FailBot:
-    async def fetch_user(self, user_id: int):
+    async def fetch_user(self, user_id: int) -> object:
         raise RuntimeError("nope")
 
 
@@ -32,7 +32,7 @@ async def test_notify_user_success_and_failure_are_safe() -> None:
     ok_bot = _OkBot()
     cog.bot = ok_bot
     await cog.notify_user(1, "hello")
-    assert ok_bot.user.messages == ["hello"]
+    assert ok_bot._u.messages == ["hello"]
 
     # Failure path: should not raise
     fail_bot = _FailBot()
