@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 import src.clubbot.services.transcript.provider as provider_mod
 from src.clubbot.services.transcript.provider import YouTubeTranscriptProvider
+from src.clubbot.services.transcript.types import TranscriptOptions
 from src.clubbot.utils.errors import UserInputError
 
 
@@ -16,14 +17,17 @@ class _FakeResource:
         return self._data
 
 
+class NoTranscriptFoundError(Exception):
+    pass
+
+
 class _FakeListing:
     def __init__(self, found: bool = True) -> None:
         self._found = found
 
     def find_transcript(self, languages: list[str]) -> _FakeResource:
         if not self._found:
-            # Use the provider module's reference so monkeypatching works
-            raise provider_mod.NoTranscriptFound("vid", languages, {})
+            raise NoTranscriptFoundError("vid", languages, {})
         return _FakeResource([{"text": "ok", "start": 0, "duration": 1}])
 
     def translate(self, language: str) -> _FakeResource:
@@ -46,15 +50,12 @@ def test_fetch_uses_get_transcript_when_available(monkeypatch: pytest.MonkeyPatc
         raising=True,
     )
 
-    out = prov.fetch("vid", SimpleNamespace(preferred_langs=["en"]))
+    out = prov.fetch("vid", TranscriptOptions(preferred_langs=["en"]))
     assert out and out[0].text == "hello" and out[0].start == 0.0
 
 
 def test_fetch_falls_back_to_listing(monkeypatch: pytest.MonkeyPatch) -> None:
     prov = YouTubeTranscriptProvider()
-
-    class NoTranscriptFoundError(Exception):
-        pass
 
     monkeypatch.setattr(provider_mod, "NoTranscriptFound", NoTranscriptFoundError, raising=True)
 
@@ -70,7 +71,7 @@ def test_fetch_falls_back_to_listing(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
         raising=True,
     )
-    out = prov.fetch("vid", SimpleNamespace(preferred_langs=["en"]))
+    out = prov.fetch("vid", TranscriptOptions(preferred_langs=["en"]))
     assert out and out[0].text in {"t"}
 
 
@@ -98,4 +99,5 @@ def test_fetch_maps_errors_to_user_input(monkeypatch: pytest.MonkeyPatch) -> Non
         raising=True,
     )
     with pytest.raises(UserInputError):
-        prov.fetch("vid", SimpleNamespace(preferred_langs=["en"]))
+        prov.fetch("vid", TranscriptOptions(preferred_langs=["en"]))
+
