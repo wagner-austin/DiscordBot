@@ -8,7 +8,7 @@ import pytest
 from discord.ext import commands
 from src.clubbot.cogs.digits import DigitsCog
 from src.clubbot.config import Config
-from src.clubbot.services.handai.client import PredictResult
+from src.clubbot.services.handai.client import HandwritingAPIError, PredictResult
 
 
 class FakeService:
@@ -97,7 +97,7 @@ def make_cfg(public: bool = True, limit: int = 5, window: int = 60) -> Config:
 
 
 class FakeAttachment(SimpleNamespace):
-    async def read(self) -> bytes:  # type: ignore[override]
+    async def read(self) -> bytes:
         return b"image-bytes"
 
 
@@ -107,7 +107,7 @@ async def test_read_happy_path_formats_reply() -> None:
     bot = commands.Bot(command_prefix="!", intents=intents)
     service = FakeService()
     cfg = make_cfg(public=True)
-    cog = DigitsCog(bot, cfg, service)  # type: ignore[arg-type]
+    cog = DigitsCog(bot, cfg, service)
     inter = FakeInteraction()
     att = FakeAttachment(filename="d.png", content_type="image/png", size=10)
     await cog.read.callback(cog, inter, att)
@@ -120,7 +120,7 @@ async def test_read_rejects_unsupported_type() -> None:
     bot = commands.Bot(command_prefix="!", intents=intents)
     service = FakeService()
     cfg = make_cfg()
-    cog = DigitsCog(bot, cfg, service)  # type: ignore[arg-type]
+    cog = DigitsCog(bot, cfg, service)
     inter = FakeInteraction()
     att = FakeAttachment(filename="x.txt", content_type="text/plain", size=10)
     await cog.read.callback(cog, inter, att)
@@ -134,10 +134,32 @@ async def test_read_rate_limit_message_on_second_call() -> None:
     bot = commands.Bot(command_prefix="!", intents=intents)
     service = FakeService()
     cfg = make_cfg(limit=1, window=1)
-    cog = DigitsCog(bot, cfg, service)  # type: ignore[arg-type]
+    cog = DigitsCog(bot, cfg, service)
     inter = FakeInteraction()
     att = FakeAttachment(filename="a.png", content_type="image/png", size=10)
     await cog.read.callback(cog, inter, att)
     await cog.read.callback(cog, inter, att)
     msg = str(inter.calls[-1]["message"])
     assert msg.startswith("Please wait")
+
+
+@pytest.mark.asyncio
+async def test_read_handles_5xx_maps_to_handle_exception() -> None:
+    intents = discord.Intents.default()
+    bot = commands.Bot(command_prefix="!", intents=intents)
+
+    class _Cog(DigitsCog):
+        def __init__(self, *a: object, **k: object) -> None:
+            super().__init__(*a, **k)
+            self.seen: list[str] = []
+
+        async def handle_exception(self, interaction, log, exc: Exception) -> None:
+            self.seen.append("exc")
+
+    service = FakeService(raise_exc=HandwritingAPIError(500, "boom"))
+    cfg = make_cfg(public=True)
+    cog = _Cog(bot, cfg, service)
+    inter = FakeInteraction()
+    att = FakeAttachment(filename="d.png", content_type="image/png", size=10)
+    await cog.read.callback(cog, inter, att)
+    assert "exc" in cog.seen

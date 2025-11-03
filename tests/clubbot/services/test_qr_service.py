@@ -4,7 +4,7 @@ from PIL import Image, ImageColor
 from src.clubbot.services.qr_service import generate_qr_png
 
 
-def test_generate_qr_png_basic():
+def test_generate_qr_png_basic() -> None:
     png = generate_qr_png(
         url="https://example.com",
         ecc="M",
@@ -24,7 +24,7 @@ def test_generate_qr_png_basic():
         assert img.getpixel((0, 0)) == ImageColor.getrgb("#FFFFFF")
 
 
-def test_generate_qr_png_background_and_grid_alignment():
+def test_generate_qr_png_background_and_grid_alignment() -> None:
     png = generate_qr_png(
         url="https://openai.com",
         ecc="H",

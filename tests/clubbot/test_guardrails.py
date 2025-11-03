@@ -38,4 +38,15 @@ def test_no_blind_except_outside_cogs() -> None:
 def test_no_type_ignore_comments_in_src() -> None:
     for p in SRC.rglob("*.py"):
         text = p.read_text(encoding="utf-8", errors="ignore")
-        assert "type: ignore" not in text, f"Found 'type: ignore' in {p}"
+        # Enforce only actual mypy ignore comments, not string mentions
+        assert "# type: ignore" not in text, f"Found '# type: ignore' in {p}"
+
+
+def test_no_type_ignore_comments_in_tests() -> None:
+    tests = Path("tests")
+    for p in tests.rglob("*.py"):
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        # Skip this guard file to avoid false positives from string literals
+        if p.name == "test_guardrails.py":
+            continue
+        assert "# type: ignore" not in text, f"Found '# type: ignore' in {p}"
