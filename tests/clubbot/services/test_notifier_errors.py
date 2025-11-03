@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 from types import SimpleNamespace
 
+import discord
 import pytest
 import src.clubbot.services.jobs.notifier as notifier_mod
 from src.clubbot.services.jobs.notifier import TranscriptEventSubscriber
@@ -19,18 +21,25 @@ class _FakeNotFoundError(Exception):
     pass
 
 
+class _FakeUser:
+    async def send(self, *args: object, **kwargs: object) -> None:
+        # For this test we simulate send raising
+        raise _FakeForbiddenError("no perms")
+
+
 class _FakeBot:
     def __init__(self, behavior: str) -> None:
         self._behavior = behavior
 
-    async def fetch_user(self, user_id: int):
+    async def fetch_user(self, user_id: int) -> _FakeUser:
         if self._behavior == "raise":
             raise _FakeHTTPError("boom")
+
         # return fake user object that raises on send
-        return SimpleNamespace(send=_fake_send_raise)
+        return _FakeUser()
 
 
-async def _fake_send_raise(*args, **kwargs):
+async def _fake_send_raise(*args: object, **kwargs: object) -> None:
     raise _FakeForbiddenError("no perms")
 
 
@@ -67,4 +76,4 @@ async def test_dm_file_handles_send_error(monkeypatch: pytest.MonkeyPatch) -> No
     )
     sub = TranscriptEventSubscriber(bot=_FakeBot("ok"), redis_url="redis://fake")
     # Should not raise despite user.send error
-    await sub._dm_file(7, "content", SimpleNamespace())
+    await sub._dm_file(7, "content", discord.File(fp=io.BytesIO(b"x"), filename="x.txt"))
