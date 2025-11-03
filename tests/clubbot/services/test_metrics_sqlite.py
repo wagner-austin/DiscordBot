@@ -1,7 +1,9 @@
+from pathlib import Path
+
 from src.clubbot.services.metrics import QRGenerationOptions, SQLiteMetricsService
 
 
-def test_metrics_sqlite_basic_counts(tmp_path):
+def test_metrics_sqlite_basic_counts(tmp_path: Path) -> None:
     db = tmp_path / "metrics.sqlite"
     ms = SQLiteMetricsService(str(db), redact_query=True)
 
@@ -55,7 +57,7 @@ def test_metrics_sqlite_basic_counts(tmp_path):
     assert br["internal_error"] == 0
 
 
-def test_metrics_windows_and_outcomes(tmp_path):
+def test_metrics_windows_and_outcomes(tmp_path: Path) -> None:
     db = tmp_path / "metrics.sqlite"
     ms = SQLiteMetricsService(str(db), redact_query=True)
 
@@ -137,7 +139,7 @@ def test_metrics_windows_and_outcomes(tmp_path):
     assert top_24h[0]["count"] == 1
 
 
-def test_metrics_redaction_toggle(tmp_path):
+def test_metrics_redaction_toggle(tmp_path: Path) -> None:
     db = tmp_path / "metrics.sqlite"
     ms = SQLiteMetricsService(str(db), redact_query=False)
 
