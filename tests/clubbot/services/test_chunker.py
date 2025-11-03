@@ -10,7 +10,7 @@ from src.clubbot.services.transcript.chunker import AudioChunker
 
 def _fake_run_ok(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
     # Simulate successful ffmpeg/ffprobe call without creating files
-    return subprocess.CompletedProcess(args=list(args), returncode=0, stdout="", stderr="")
+    return subprocess.CompletedProcess(args=["ffmpeg"], returncode=0, stdout="", stderr="")
 
 
 def test_chunker_selects_webm_for_opus(monkeypatch: pytest.MonkeyPatch) -> None:
