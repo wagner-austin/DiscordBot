@@ -1,7 +1,7 @@
 import asyncio
 import time
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Protocol, no_type_check
 
 import discord
 import pytest
@@ -61,18 +61,22 @@ def make_cfg(per: int = 1000, window: int = 1) -> Config:
     )
 
 
+class _Opts(Protocol):
+    url: str
+
+
 class SlowQRService:
     def __init__(self, delay: float = 0.1) -> None:
         self.delay = delay
 
-    def generate_qr_with_options(self, opts):  # pragma: no cover - simple stub
+    def generate_qr_with_options(self, opts: _Opts) -> object:  # pragma: no cover - simple stub
         # Simulate CPU/PIL work without blocking the event loop
         time.sleep(self.delay)
         return type("QRResult", (), {"image_png": b"\x89PNG\r\n\x1a\n", "url": opts.url})()
 
 
 @pytest.mark.asyncio
-async def test_qrcode_spam_concurrent_calls_complete_without_errors():
+async def test_qrcode_spam_concurrent_calls_complete_without_errors() -> None:
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1000, window=1)
@@ -83,7 +87,8 @@ async def test_qrcode_spam_concurrent_calls_complete_without_errors():
     n = 10
     ctxs = [FakeInteraction(uid=i + 1) for i in range(n)]
 
-    async def run_one(c):
+    @no_type_check
+    async def run_one(c) -> None:
         await cog.qrcode.callback(cog, c, "example.com")
 
     await asyncio.gather(*(run_one(c) for c in ctxs))
@@ -94,7 +99,7 @@ async def test_qrcode_spam_concurrent_calls_complete_without_errors():
 
 
 @pytest.mark.asyncio
-async def test_qrcode_handles_various_invalid_inputs_with_clear_messages():
+async def test_qrcode_handles_various_invalid_inputs_with_clear_messages() -> None:
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg(per=1000, window=1)
@@ -110,7 +115,12 @@ async def test_qrcode_handles_various_invalid_inputs_with_clear_messages():
 
     for raw in bad_inputs:
         ctx = FakeInteraction(uid=42)
-        await cog.qrcode.callback(cog, ctx, raw)
+
+        @no_type_check
+        async def _call(ctx_local: FakeInteraction, raw_local: str) -> None:
+            await cog.qrcode.callback(cog, ctx_local, raw_local)
+
+        await _call(ctx, raw)
         assert ctx.calls, f"Expected an error response for input: {raw!r}"
         msg = str(ctx.calls[-1]["message"]) or ""
         # Accept our validation message families (friendlier wording allowed)
