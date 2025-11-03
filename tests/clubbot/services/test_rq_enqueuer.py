@@ -71,7 +71,7 @@ def test_rq_enqueuer_builds_job_with_expected_args(monkeypatch: pytest.MonkeyPat
     # Validate payload and config captured by fake queue
     assert fake_queue.last_args is not None
     fpath, payload = fake_queue.last_args
-    assert fpath == "src.clubbot.workers.transcript.process_transcript_job"
+    assert fpath == "clubbot.workers.transcript.process_transcript_job"
     assert isinstance(payload, dict) and payload["request_id"] == "r1" and payload["user_id"] == 7
     assert fake_queue.last_kwargs is not None
     assert fake_queue.last_kwargs["job_timeout"] == 123
