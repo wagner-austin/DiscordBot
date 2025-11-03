@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import no_type_check
 
 import pytest
 import src.clubbot.cogs.qr as qr_mod
@@ -18,13 +19,16 @@ class _FakeInteraction:
 
         self.response = SimpleNamespace(is_done=lambda: False, defer=_defer)
         self.followup = SimpleNamespace(send=_send)
+        self.user = SimpleNamespace(id=0)
 
 
 class _FakeService:
     def __init__(self) -> None:
         self._res = SimpleNamespace(image_png=b"x", url="https://x")
 
-    def generate_qr_with_options(self, *_: object, **__: object):  # sync, called in thread
+    def generate_qr_with_options(
+        self, *_: object, **__: object
+    ) -> object:  # sync, called in thread
         return self._res
 
 
@@ -48,6 +52,7 @@ def _cfg() -> Config:
 
 
 @pytest.mark.asyncio
+@no_type_check
 async def test_qr_ack_return_and_user_id_none(monkeypatch: pytest.MonkeyPatch) -> None:
     # Force ack false to hit early return
     class _Cog(QRCog):
@@ -56,23 +61,34 @@ async def test_qr_ack_return_and_user_id_none(monkeypatch: pytest.MonkeyPatch) -
 
     cfg = _cfg()
     cog = _Cog(bot=SimpleNamespace(), config=cfg, qr_service=_FakeService())
-    await cog.qrcode.callback(cog, _FakeInteraction(), "https://x")
+
+    @no_type_check
+    async def _call() -> None:
+        await cog.qrcode.callback(cog, _FakeInteraction(), "https://x")
+
+    await _call()
 
     # user id None path
     messages: list[str] = []
 
     class _Cog2(QRCog):
-        async def handle_user_error(self, interaction, log, message: str) -> None:
+        async def handle_user_error(self, interaction: object, log: object, message: str) -> None:
             messages.append(message)
 
     inter = _FakeInteraction()
     inter.user = SimpleNamespace()  # missing id
     cog2 = _Cog2(bot=SimpleNamespace(), config=cfg, qr_service=_FakeService())
-    await cog2.qrcode.callback(cog2, inter, "https://x")
+
+    @no_type_check
+    async def _call2() -> None:
+        await cog2.qrcode.callback(cog2, inter, "https://x")
+
+    await _call2()
     assert messages
 
 
 @pytest.mark.asyncio
+@no_type_check
 async def test_qr_ack_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
     # Patch discord module exceptions in qr module
     class _NotFoundError(Exception):
