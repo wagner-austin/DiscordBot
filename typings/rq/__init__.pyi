@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Protocol
 
 from .job import Job
-from .retry import Retry
+
+class Retry:
+    def __init__(self, max: int, interval: list[int]) -> None: ...
 
 class _RedisConnection(Protocol): ...
 
