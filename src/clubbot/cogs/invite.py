@@ -25,7 +25,7 @@ def _resolve_app_id(client: commands.Bot) -> int | None:
 class InviteCog(BaseCog):
     def __init__(self, bot: commands.Bot, config: Config) -> None:
         super().__init__()
-        self.bot = bot
+        self.bot: commands.Bot = bot
         self.config = config
 
     @app_commands.command(name="invite", description="Get the server invite link for this bot")
