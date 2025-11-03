@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from contextlib import suppress
 from types import SimpleNamespace
 
@@ -57,7 +58,13 @@ def test_split_audio_copy_then_reencode(monkeypatch: pytest.MonkeyPatch) -> None
 
     calls: list[str] = []
 
-    def fake_run(cmd, check=False, capture_output=False, text=False, timeout=None):
+    def fake_run(
+        cmd: Sequence[str] | str,
+        check: bool = False,
+        capture_output: bool = False,
+        text: bool = False,
+        timeout: float | None = None,
+    ) -> SimpleNamespace:
         nonlocal calls
         # When re-encode, we see '-c:a' in cmd
         if "-c:a" in cmd:
