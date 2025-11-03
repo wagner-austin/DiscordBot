@@ -1,130 +1,207 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
 
-import discord
 import pytest
-from src.clubbot.services.jobs.events import TranscriptCompletedEvent, TranscriptFailedEvent
 from src.clubbot.services.jobs.notifier import TranscriptEventSubscriber
 
 
-class _FakeConn:
-    def __init__(self, text: str | None) -> None:
+class _User:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, dict]] = []
+
+    async def send(self, content: str, **kwargs: object) -> None:
+        self.messages.append((content, kwargs))
+
+
+class _Bot:
+    def __init__(self) -> None:
+        self.user = _User()
+
+    async def fetch_user(self, user_id: int) -> _User:
+        return self.user
+
+
+@pytest.mark.asyncio
+async def test_notifier_start_idempotent_and_stop_cancels(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Patch _run to avoid touching Redis
+    async def _noop_run(self: TranscriptEventSubscriber) -> None:  # pragma: no cover - trivial stub
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(TranscriptEventSubscriber, "_run", _noop_run, raising=False)
+
+    sub = TranscriptEventSubscriber(bot=_Bot(), redis_url="redis://localhost:6379/0")
+    sub.start()
+    # Second start is idempotent: early return
+    sub.start()
+    # Stop cancels and awaits the task
+    await sub.stop()
+
+
+@pytest.mark.asyncio
+async def test_notifier_notify_success_path() -> None:
+    bot = _Bot()
+    sub = TranscriptEventSubscriber(bot=bot, redis_url="redis://localhost:6379/0")
+    await sub._notify(123, "hello")
+    assert bot.user.messages and bot.user.messages[-1][0] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_notifier_stop_is_noop_when_not_started() -> None:
+    sub = TranscriptEventSubscriber(bot=_Bot(), redis_url="redis://localhost:6379/0")
+    await sub.stop()  # should not raise
+
+
+@pytest.mark.asyncio
+async def test_handle_event_dispatches_completed_and_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sub = TranscriptEventSubscriber(bot=_Bot(), redis_url="redis://localhost:6379/0")
+    flags = {"completed": False, "failed": False}
+
+    async def _done_completed(conn, e):
+        flags["completed"] = True
+
+    async def _done_failed(e):
+        flags["failed"] = True
+
+    monkeypatch.setattr(sub, "_on_completed", _done_completed)
+    monkeypatch.setattr(sub, "_on_failed", _done_failed)
+    # Completed path
+    await sub._handle_event(
+        object(),
+        {
+            "type": "completed",
+            "user_id": 1,
+            "request_id": "r",
+            "content_key": "k",
+            "url": "u",
+            "video_id": "v",
+        },
+    )
+    # Failed path
+    await sub._handle_event(
+        object(),
+        {
+            "type": "failed",
+            "user_id": 1,
+            "request_id": "r",
+            "error_kind": "system",
+            "message": "m",
+        },
+    )
+    assert flags["completed"] is True and flags["failed"] is True
+
+
+class _ConnMissing:
+    async def get(self, name: str) -> str | None:
+        return None
+
+
+class _ConnWithText:
+    def __init__(self, text: str) -> None:
         self._text = text
 
-    async def get(self, name: str) -> str | None:  # pragma: no cover - trivial
+    async def get(self, name: str) -> str | None:
         return self._text
 
-    # Provide pubsub API to satisfy notifier protocol (unused by tests)
-    class _PS:
-        async def subscribe(self, *channels: str) -> None:  # pragma: no cover - stub
-            return None
-
-        async def get_message(
-            self, ignore_subscribe_messages: bool = True, timeout: float = 1.0
-        ) -> dict[str, object] | None:  # pragma: no cover - stub
-            return None
-
-        async def close(self) -> None:  # pragma: no cover - stub
-            return None
-
-    def pubsub(self) -> _PS:  # pragma: no cover - stub
-        return self._PS()
-
-
-@dataclass
-class _Recorder:
-    notified: list[tuple[int, str]]
-    dm_files: list[tuple[int, str]]
-
-
-class _TestSubscriber(TranscriptEventSubscriber):
-    def __init__(self) -> None:
-        class _FakeUser:
-            # pragma: no cover - unused
-            async def send(self, *args: object, **kwargs: object) -> None:
-                return None
-
-        class _FakeBot:
-            async def fetch_user(self, user_id: int) -> _FakeUser:  # pragma: no cover - unused
-                return _FakeUser()
-
-        super().__init__(bot=_FakeBot(), redis_url="redis://fake")
-        self.rec = _Recorder([], [])
-
-    async def _notify(self, user_id: int, message: str) -> None:
-        self.rec.notified.append((user_id, message))
-
-    async def _dm_file(self, user_id: int, content: str, file: discord.File) -> None:
-        self.rec.dm_files.append((user_id, content))
-
 
 @pytest.mark.asyncio
-async def test_completed_event_dm_file_when_content_present() -> None:
-    sub = _TestSubscriber()
-    e: TranscriptCompletedEvent = {
+async def test_on_completed_key_missing_notifies(monkeypatch: pytest.MonkeyPatch) -> None:
+    bot = _Bot()
+    sub = TranscriptEventSubscriber(bot=bot, redis_url="redis://localhost:6379/0")
+    captured: list[str] = []
+
+    async def _notify(uid: int, msg: str) -> None:
+        captured.append(msg)
+
+    monkeypatch.setattr(sub, "_notify", _notify)
+    e = {
         "type": "completed",
+        "user_id": 1,
         "request_id": "r1",
-        "user_id": 7,
-        "url": "https://x",
-        "video_id": "vid",
-        "content_key": "k1",
+        "content_key": "k",
+        "url": "u",
+        "video_id": "v",
     }
-    conn = _FakeConn("hello")
-    await sub._handle_event(conn, e)
-    assert sub.rec.dm_files and not sub.rec.notified
+    await sub._on_completed(_ConnMissing(), e)
+    assert any("transcript is ready" in s.lower() for s in captured)
 
 
 @pytest.mark.asyncio
-async def test_completed_event_notify_when_missing_content() -> None:
-    sub = _TestSubscriber()
-    e: TranscriptCompletedEvent = {
-        "type": "completed",
-        "request_id": "r1",
-        "user_id": 7,
-        "url": "https://x",
-        "video_id": "vid",
-        "content_key": "missing",
-    }
-    conn = _FakeConn(None)
-    await sub._handle_event(conn, e)
-    assert sub.rec.notified and not sub.rec.dm_files
-
-
-@pytest.mark.asyncio
-async def test_completed_event_too_large_triggers_notify() -> None:
-    sub = _TestSubscriber()
+async def test_on_completed_too_large_triggers_notify(monkeypatch: pytest.MonkeyPatch) -> None:
+    sub = TranscriptEventSubscriber(bot=_Bot(), redis_url="redis://localhost:6379/0")
     sub.max_attachment_mb = 1
-    e: TranscriptCompletedEvent = {
+    text = "x" * (2 * 1024 * 1024)  # 2MB
+    captured: list[str] = []
+
+    async def _notify(uid: int, msg: str) -> None:
+        captured.append(msg)
+
+    monkeypatch.setattr(sub, "_notify", _notify)
+    e = {
         "type": "completed",
-        "request_id": "r1",
-        "user_id": 7,
-        "url": "https://x",
-        "video_id": "vid",
-        "content_key": "k1",
+        "user_id": 1,
+        "request_id": "r2",
+        "content_key": "k",
+        "url": "u",
+        "video_id": "v",
     }
-    conn = _FakeConn("x" * (2 * 1024 * 1024))
-    await sub._handle_event(conn, e)
-    assert sub.rec.notified and not sub.rec.dm_files
+    await sub._on_completed(_ConnWithText(text), e)
+    assert any("too large" in s.lower() for s in captured)
 
 
 @pytest.mark.asyncio
-async def test_failed_events_notify_user_and_system() -> None:
-    sub = _TestSubscriber()
-    e_user: TranscriptFailedEvent = {
-        "type": "failed",
-        "request_id": "r1",
-        "user_id": 7,
-        "error_kind": "user",
-        "message": "m",
+async def test_on_completed_small_sends_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    sub = TranscriptEventSubscriber(bot=_Bot(), redis_url="redis://localhost:6379/0")
+    data = "hello world"
+    sent: dict[str, object] = {}
+
+    async def _dm_file(uid: int, content: str, file) -> None:
+        sent["uid"] = uid
+        sent["content"] = content
+        sent["file"] = file
+
+    monkeypatch.setattr(sub, "_dm_file", _dm_file)
+    e = {
+        "type": "completed",
+        "user_id": 9,
+        "request_id": "r3",
+        "content_key": "k",
+        "url": "https://x",
+        "video_id": "vid",
     }
-    await sub._handle_event(_FakeConn(None), e_user)
-    e_system: TranscriptFailedEvent = {
-        "type": "failed",
-        "request_id": "r1",
-        "user_id": 7,
-        "error_kind": "system",
-        "message": "m",
-    }
-    await sub._handle_event(_FakeConn(None), e_system)
-    assert len(sub.rec.notified) == 2
+    await sub._on_completed(_ConnWithText(data), e)
+    assert sent.get("uid") == 9 and isinstance(sent.get("file"), object)
+
+
+@pytest.mark.asyncio
+async def test_on_failed_user_and_system_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    sub = TranscriptEventSubscriber(bot=_Bot(), redis_url="redis://localhost:6379/0")
+    msgs: list[str] = []
+
+    async def _notify(uid: int, msg: str) -> None:
+        msgs.append(msg)
+
+    monkeypatch.setattr(sub, "_notify", _notify)
+    await sub._on_failed(
+        {
+            "type": "failed",
+            "user_id": 1,
+            "request_id": "r4",
+            "error_kind": "user",
+            "message": "bad",
+        }
+    )
+    await sub._on_failed(
+        {
+            "type": "failed",
+            "user_id": 1,
+            "request_id": "r5",
+            "error_kind": "system",
+            "message": "oops",
+        }
+    )
+    assert any("failed" in s.lower() for s in msgs) and any(
+        "error occurred" in s.lower() for s in msgs
+    )
