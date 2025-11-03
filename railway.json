@@ -1,0 +1,22 @@
+{
+  "name": "Discord Club Bot (Bot + Worker)",
+  "description": "Discord bot with RQ worker for STT transcription (Redis-backed)",
+  "plugins": ["redis"],
+  "services": [
+    {
+      "name": "bot",
+      "startCommand": "python -m src.clubbot.main",
+      "env": {
+        "TRANSCRIPT_PROVIDER": "stt"
+      }
+    },
+    {
+      "name": "worker",
+      "startCommand": "poetry run rq worker transcript --with-scheduler",
+      "env": {
+        "TRANSCRIPT_PROVIDER": "stt"
+      }
+    }
+  ]
+}
+
