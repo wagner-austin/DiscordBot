@@ -69,6 +69,15 @@ class Config:
     RQ_TRANSCRIPT_RETRY_INTERVALS_SEC: tuple[int, int] = (60, 300)
     TRANSCRIPT_EVENTS_CHANNEL: str = "transcript:events"
     TRANSCRIPT_RESULT_KEY_PREFIX: str = "transcript:result:"
+    # Handwriting service (Digits)
+    HANDWRITING_API_URL: str | None = None
+    HANDWRITING_API_KEY: str | None = None
+    HANDWRITING_API_TIMEOUT_SECONDS: int = 5
+    HANDWRITING_API_MAX_RETRIES: int = 1
+    DIGITS_PUBLIC_RESPONSES: bool = False
+    DIGITS_RATE_LIMIT: int = 2
+    DIGITS_RATE_WINDOW_SECONDS: int = 60
+    DIGITS_MAX_IMAGE_MB: int = 2
 
 
 def _parse_guilds() -> tuple[str | None, list[int]]:
@@ -379,6 +388,51 @@ def load_config() -> Config:
         TRANSCRIPT_RESULT_KEY_PREFIX=str(
             file_overrides.get("TRANSCRIPT_RESULT_KEY_PREFIX")
             or os.getenv("TRANSCRIPT_RESULT_KEY_PREFIX", "transcript:result:")
+        ),
+        # Handwriting service (Digits)
+        HANDWRITING_API_URL=(
+            (str(file_overrides.get("HANDWRITING_API_URL") or "").strip())
+            or (os.getenv("HANDWRITING_API_URL") or "").strip()
+            or None
+        ),
+        HANDWRITING_API_KEY=(
+            (str(file_overrides.get("HANDWRITING_API_KEY") or "").strip())
+            or (os.getenv("HANDWRITING_API_KEY") or "").strip()
+            or None
+        ),
+        HANDWRITING_API_TIMEOUT_SECONDS=_from_overrides_int(
+            file_overrides,
+            "HANDWRITING_API_TIMEOUT_SECONDS",
+            _i("HANDWRITING_API_TIMEOUT_SECONDS", 5),
+        ),
+        HANDWRITING_API_MAX_RETRIES=_from_overrides_int(
+            file_overrides,
+            "HANDWRITING_API_MAX_RETRIES",
+            _i("HANDWRITING_API_MAX_RETRIES", 1),
+        ),
+        DIGITS_PUBLIC_RESPONSES=(
+            str(
+                file_overrides.get("DIGITS_PUBLIC_RESPONSES")
+                or os.getenv("DIGITS_PUBLIC_RESPONSES", "false")
+            )
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "y", "on"}
+        ),
+        DIGITS_RATE_LIMIT=_from_overrides_int(
+            file_overrides,
+            "DIGITS_RATE_LIMIT",
+            _i("DIGITS_RATE_LIMIT", 2),
+        ),
+        DIGITS_RATE_WINDOW_SECONDS=_from_overrides_int(
+            file_overrides,
+            "DIGITS_RATE_WINDOW_SECONDS",
+            _i("DIGITS_RATE_WINDOW_SECONDS", 60),
+        ),
+        DIGITS_MAX_IMAGE_MB=_from_overrides_int(
+            file_overrides,
+            "DIGITS_MAX_IMAGE_MB",
+            _i("DIGITS_MAX_IMAGE_MB", 2),
         ),
     )
 
