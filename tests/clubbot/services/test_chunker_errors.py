@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Sequence
 from types import SimpleNamespace
 
 import pytest
@@ -48,7 +49,13 @@ def test_split_audio_reencode_timeout_raises(monkeypatch: pytest.MonkeyPatch) ->
     calls = {"n": 0}
     import subprocess
 
-    def run_with_fallback(cmd, check=False, capture_output=False, text=False, timeout=None):
+    def run_with_fallback(
+        cmd: Sequence[str] | str,
+        check: bool = False,
+        capture_output: bool = False,
+        text: bool = False,
+        timeout: float | None = None,
+    ) -> None:
         if "-c:a" in cmd:
             # Simulate reencode path timing out
             raise subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120)
@@ -79,7 +86,7 @@ def test_probe_stream_info_bad_json_returns_empty(monkeypatch: pytest.MonkeyPatc
     ch = AudioChunker()
     import subprocess
 
-    def bad_json(*args: object, **kwargs: object):
+    def bad_json(*args: object, **kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(stdout="not json", stderr="")
 
     monkeypatch.setattr(subprocess, "run", bad_json, raising=True)
