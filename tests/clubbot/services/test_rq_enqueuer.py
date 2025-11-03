@@ -41,11 +41,11 @@ def test_rq_enqueuer_builds_job_with_expected_args(monkeypatch: pytest.MonkeyPat
         assert name == "transcript"
         return fake_queue
 
-    monkeypatch.setitem(__import__("sys").modules, "rq", SimpleNamespace(Queue=fake_queue_ctor))
+    # Provide only top-level Retry on rq to assert correct import path
     monkeypatch.setitem(
         __import__("sys").modules,
-        "rq.retry",
-        SimpleNamespace(Retry=_FakeRetry),
+        "rq",
+        SimpleNamespace(Queue=fake_queue_ctor, Retry=_FakeRetry),
     )
 
     class _FakeRedis:
