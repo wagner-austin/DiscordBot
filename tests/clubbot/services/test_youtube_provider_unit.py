@@ -100,4 +100,3 @@ def test_fetch_maps_errors_to_user_input(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     with pytest.raises(UserInputError):
         prov.fetch("vid", TranscriptOptions(preferred_langs=["en"]))
-
