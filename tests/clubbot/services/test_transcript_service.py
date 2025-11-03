@@ -30,7 +30,7 @@ def make_cfg() -> Config:
     )
 
 
-def test_transcript_service_cleans_and_canonicalizes_url():
+def test_transcript_service_cleans_and_canonicalizes_url() -> None:
     cfg = make_cfg()
     svc = TranscriptService(cfg)
     # Inject fake provider for offline test

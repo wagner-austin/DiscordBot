@@ -62,6 +62,8 @@ lint:
 	poetry run ruff check . --fix
 	poetry run ruff format .
 	poetry run mypy
+	@echo "Checking for type: ignore comments..."
+	@grep -rn "type: ignore" src/ tests/ && echo "Warning: Found type: ignore comments above" || echo "No type: ignore comments found"
 
 check: lint | test
 	

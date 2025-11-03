@@ -62,7 +62,7 @@ async def test_transcript_rate_limited(monkeypatch: pytest.MonkeyPatch) -> None:
     cfg = _cfg()
     cog = _Cog(bot=SimpleNamespace(), config=cfg, transcript_service=SimpleNamespace())
     # Force rate limiter deny
-    cog.rate_limiter = SimpleNamespace(allow=lambda *_: (False, 7))  # type: ignore[assignment]
+    cog.rate_limiter = SimpleNamespace(allow=lambda *_: (False, 7))
     inter = _FakeInteraction()
     monkeypatch.setattr(t_mod, "validate_youtube_url", lambda u: u)
     await cog.transcript.callback(cog, inter, "https://example.com/watch?v=1")
@@ -109,7 +109,7 @@ async def test_transcript_user_id_missing(monkeypatch: pytest.MonkeyPatch) -> No
     messages: list[str] = []
 
     class _Cog(TranscriptCog):
-        async def handle_user_error(self, interaction, log, message: str) -> None:  # type: ignore[override]
+        async def handle_user_error(self, interaction, log, message: str) -> None:
             messages.append(message)
 
     cfg = _cfg()
@@ -138,7 +138,7 @@ async def test_transcript_user_input_error(monkeypatch: pytest.MonkeyPatch) -> N
     messages: list[str] = []
 
     class _Cog(TranscriptCog):
-        async def handle_user_error(self, interaction, log, message: str) -> None:  # type: ignore[override]
+        async def handle_user_error(self, interaction, log, message: str) -> None:
             messages.append(message)
 
     cfg = _cfg()
@@ -162,7 +162,7 @@ async def test_transcript_generic_exception(monkeypatch: pytest.MonkeyPatch) -> 
             raise RuntimeError("boom")
 
     class _Cog(TranscriptCog):
-        async def handle_exception(self, interaction, log, exc: Exception) -> None:  # type: ignore[override]
+        async def handle_exception(self, interaction, log, exc: Exception) -> None:
             hits.append("exc")
 
     cfg = _cfg()

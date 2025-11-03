@@ -156,4 +156,4 @@ def test_extract_int_attr_and_validate_attachment_size() -> None:
 
     att = _A(size=(cfg.DIGITS_MAX_IMAGE_MB * 1024 * 1024) + 1)
     with pytest.raises(digits_mod.UserInputError):
-        cog._validate_attachment(att)  # type: ignore[arg-type]
+        cog._validate_attachment(att)

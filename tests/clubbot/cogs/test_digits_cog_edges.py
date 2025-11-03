@@ -67,7 +67,7 @@ async def test_ack_interaction_handles_not_found(monkeypatch: pytest.MonkeyPatch
     bot = SimpleNamespace()
     cfg = _cfg()
     svc = _Svc()
-    cog = DigitsCog(bot, cfg, svc)  # type: ignore[arg-type]
+    cog = DigitsCog(bot, cfg, svc)
     inter = _Inter(exc=_NotFoundError())
     ok = await cog._ack_interaction(inter)
     assert ok is False
@@ -84,7 +84,7 @@ async def test_ack_interaction_http_exception_already_ack(monkeypatch: pytest.Mo
     bot = SimpleNamespace()
     cfg = _cfg()
     svc = _Svc()
-    cog = DigitsCog(bot, cfg, svc)  # type: ignore[arg-type]
+    cog = DigitsCog(bot, cfg, svc)
     inter = _Inter(exc=_FakeHTTPError(40060))
     ok = await cog._ack_interaction(inter)
     assert ok is True
@@ -101,7 +101,7 @@ async def test_ack_interaction_http_exception_other(monkeypatch: pytest.MonkeyPa
     bot = SimpleNamespace()
     cfg = _cfg()
     svc = _Svc()
-    cog = DigitsCog(bot, cfg, svc)  # type: ignore[arg-type]
+    cog = DigitsCog(bot, cfg, svc)
     inter = _Inter(exc=_FakeHTTPError(1))
     ok = await cog._ack_interaction(inter)
     assert ok is False
@@ -113,16 +113,16 @@ async def test_user_error_mappings_and_size_limit(monkeypatch: pytest.MonkeyPatc
     messages: list[str] = []
 
     class _Cog(DigitsCog):
-        async def handle_user_error(self, interaction, log, message: str) -> None:  # type: ignore[override]
+        async def handle_user_error(self, interaction, log, message: str) -> None:
             messages.append(message)
 
-        async def handle_exception(self, interaction, log, exc: Exception) -> None:  # type: ignore[override]
+        async def handle_exception(self, interaction, log, exc: Exception) -> None:
             messages.append("EXC")
 
     bot = SimpleNamespace()
     cfg = _cfg()
     svc = _Svc()
-    cog = _Cog(bot, cfg, svc)  # type: ignore[arg-type]
+    cog = _Cog(bot, cfg, svc)
 
     # Too large preflight
     att = SimpleNamespace(filename="a.png", content_type="image/png", size=10)
@@ -131,7 +131,7 @@ async def test_user_error_mappings_and_size_limit(monkeypatch: pytest.MonkeyPatc
     from src.clubbot.utils.errors import UserInputError
 
     try:
-        cog._validate_attachment(att)  # type: ignore[arg-type]
+        cog._validate_attachment(att)
     except UserInputError as e:
         await cog.handle_user_error(inter, log, str(e))
 

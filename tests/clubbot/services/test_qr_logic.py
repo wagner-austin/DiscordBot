@@ -19,7 +19,7 @@ def make_cfg() -> Config:
     )
 
 
-def test_build_effective_qr_options_defaults():
+def test_build_effective_qr_options_defaults() -> None:
     cfg = make_cfg()
     opts = build_effective_qr_options("https://example.com", cfg)
     assert opts.url == "https://example.com"
@@ -30,7 +30,7 @@ def test_build_effective_qr_options_defaults():
     assert opts.back_color == cfg.QR_DEFAULT_BACK_COLOR
 
 
-def test_build_effective_qr_options_accepts_bare_hostname():
+def test_build_effective_qr_options_accepts_bare_hostname() -> None:
     cfg = make_cfg()
     opts = build_effective_qr_options("example.com", cfg)
     assert opts.url == "https://example.com"
