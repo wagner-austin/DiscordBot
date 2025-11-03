@@ -35,8 +35,7 @@ class RQTranscriptEnqueuer(TranscriptEnqueuer):
     retry_intervals_s: tuple[int, int] = (60, 300)
 
     def enqueue_transcript(self, *, request_id: str, url: str, user_id: int) -> str:
-        from rq import Queue
-        from rq.retry import Retry
+        from rq import Queue, Retry
 
         conn = _redis_from_url(self.redis_url)
         q = Queue(self.queue_name, connection=conn)
