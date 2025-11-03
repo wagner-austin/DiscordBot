@@ -3,9 +3,30 @@ from __future__ import annotations
 import contextlib
 import logging
 import uuid
+from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
+
+if TYPE_CHECKING:
+    from typing import Protocol
+
+    class _ResponseProto(Protocol):  # pragma: no cover - typing only
+        def is_done(self) -> bool: ...
+
+        async def send_message(self, *args: object, **kw: object) -> None: ...
+
+    class _FollowupProto(Protocol):  # pragma: no cover - typing only
+        async def send(self, *args: object, **kw: object) -> None: ...
+
+    class _InteractionProto(Protocol):  # pragma: no cover - typing only
+        @property
+        def response(self) -> _ResponseProto: ...
+
+        @property
+        def followup(self) -> _FollowupProto: ...
+else:  # pragma: no cover - runtime only
+    _InteractionProto = object
 
 
 class BaseCog(commands.Cog):
@@ -14,6 +35,9 @@ class BaseCog(commands.Cog):
     def __init__(self) -> None:
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__module__)
+        # Bot is injected by discord.py at runtime when the cog is added.
+        # Keep loosely typed; concrete cogs can narrow.
+        self.bot: object | None = None
 
     @staticmethod
     def new_request_id() -> str:
