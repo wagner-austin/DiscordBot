@@ -15,6 +15,22 @@ class _FakeConn:
     async def get(self, name: str) -> str | None:  # pragma: no cover - trivial
         return self._text
 
+    # Provide pubsub API to satisfy notifier protocol (unused by tests)
+    class _PS:
+        async def subscribe(self, *channels: str) -> None:  # pragma: no cover - stub
+            return None
+
+        async def get_message(
+            self, ignore_subscribe_messages: bool = True, timeout: float = 1.0
+        ) -> dict[str, object] | None:  # pragma: no cover - stub
+            return None
+
+        async def close(self) -> None:  # pragma: no cover - stub
+            return None
+
+    def pubsub(self) -> _PS:  # pragma: no cover - stub
+        return self._PS()
+
 
 @dataclass
 class _Recorder:
@@ -24,9 +40,16 @@ class _Recorder:
 
 class _TestSubscriber(TranscriptEventSubscriber):
     def __init__(self) -> None:
-        from types import SimpleNamespace
+        class _FakeUser:
+            # pragma: no cover - unused
+            async def send(self, *args: object, **kwargs: object) -> None:
+                return None
 
-        super().__init__(bot=SimpleNamespace(fetch_user=None), redis_url="redis://fake")
+        class _FakeBot:
+            async def fetch_user(self, user_id: int) -> _FakeUser:  # pragma: no cover - unused
+                return _FakeUser()
+
+        super().__init__(bot=_FakeBot(), redis_url="redis://fake")
         self.rec = _Recorder([], [])
 
     async def _notify(self, user_id: int, message: str) -> None:
