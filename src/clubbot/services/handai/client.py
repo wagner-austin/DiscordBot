@@ -111,8 +111,8 @@ class HandwritingClient(HandwritingReader):
             except (ValueError, TypeError) as e:
                 # Response decoding/shape errors are not retriable here
                 raise HandwritingAPIError(500, "Invalid response body") from e
-        # Should never reach here
-        raise HandwritingAPIError(500, "Unexpected client error")
+        # Should never reach here; loop either returns or raises
+        raise HandwritingAPIError(500, "Unexpected client error")  # pragma: no cover
 
     async def _attempt_read(
         self,
