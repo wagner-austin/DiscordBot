@@ -18,22 +18,31 @@ from .events import (
 )
 
 if TYPE_CHECKING:  # narrow async redis interface for typing
+    from typing import Protocol
 
-    class _RedisAsyncProto:  # pragma: no cover - typing only
+    class _UserProto(Protocol):  # pragma: no cover - typing only
+        async def send(self, *args: object, **kwargs: object) -> object: ...
+
+    class _BotProto(Protocol):  # pragma: no cover - typing only
+        async def fetch_user(self, user_id: int) -> _UserProto: ...
+
+    BotType = _BotProto | commands.Bot
+
+    class _PubSubProto(Protocol):  # pragma: no cover - typing only
+        async def subscribe(self, *channels: str) -> None: ...
+
+        async def get_message(
+            self,
+            ignore_subscribe_messages: bool = True,
+            timeout: float = 1.0,
+        ) -> dict[str, object] | None: ...
+
+        async def close(self) -> None: ...
+
+    class _RedisAsyncProto(Protocol):  # pragma: no cover - typing only
         async def get(self, name: str) -> str | None: ...
 
-        class _PubSub:
-            async def subscribe(self, *channels: str) -> None: ...
-
-            async def get_message(
-                self,
-                ignore_subscribe_messages: bool = True,
-                timeout: float = 1.0,
-            ) -> dict[str, object] | None: ...
-
-            async def close(self) -> None: ...
-
-        def pubsub(self) -> _PubSub: ...
+        def pubsub(self) -> _PubSubProto: ...
 
     def _redis_from_url(url: str) -> _RedisAsyncProto: ...
 else:  # pragma: no cover - runtime import only
@@ -42,6 +51,8 @@ else:  # pragma: no cover - runtime import only
         import redis.asyncio as redis_asyncio
 
         return redis_asyncio.from_url(url, encoding="utf-8", decode_responses=True)
+
+    BotType = commands.Bot
 
 
 def _too_large(limit_mb: int, data: bytes) -> bool:
@@ -57,7 +68,7 @@ Event = TranscriptCompletedEvent | TranscriptFailedEvent
 
 @dataclass
 class TranscriptEventSubscriber:
-    bot: commands.Bot
+    bot: BotType
     redis_url: str
     events_channel: str = DEFAULT_EVENTS_CHANNEL
     max_attachment_mb: int = 25
