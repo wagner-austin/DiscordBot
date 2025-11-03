@@ -2,23 +2,28 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 from ...utils.errors import UserInputError
-from .queue import JobBase
 
-TJob = TypeVar("TJob", bound=JobBase)
+
+class JobBaseProto(Protocol):
+    request_id: str
+    user_id: int
+
+
+TJob = TypeVar("TJob", bound=JobBaseProto)
 
 
 def default_retry_policy_factory(
     user_error_type: type[Exception] = UserInputError,
-) -> Callable[[JobBase, Exception, int], bool]:
+) -> Callable[[JobBaseProto, Exception, int], bool]:
     """Create a retry policy that avoids retry for user input errors.
 
     Returns a callable(job, exc, attempt) -> bool where False means don't retry.
     """
 
-    def _policy(job: JobBase, exc: Exception, attempt: int) -> bool:
+    def _policy(job: JobBaseProto, exc: Exception, attempt: int) -> bool:
         return not isinstance(exc, user_error_type)
 
     return _policy
@@ -29,7 +34,7 @@ def failure_notifier_factory(
     *,
     user_error_type: type[Exception] = UserInputError,
     service_name: str = "job",
-) -> Callable[[JobBase, Exception, int, bool], Awaitable[None] | None]:
+) -> Callable[[JobBaseProto, Exception, int, bool], Awaitable[None] | None]:
     """Create a failure callback that DMs users on failures.
 
     - Notifies immediately on first user-error failure.
@@ -37,7 +42,7 @@ def failure_notifier_factory(
     - Requires a notifier (e.g., cog.notify_user). Job type must provide user_id and request_id.
     """
 
-    async def _callback(job: JobBase, exc: Exception, attempt: int, will_retry: bool) -> None:
+    async def _callback(job: JobBaseProto, exc: Exception, attempt: int, will_retry: bool) -> None:
         logger = logging.getLogger(__name__)
         user_id = job.user_id
         request_id = job.request_id

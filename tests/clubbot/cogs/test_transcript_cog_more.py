@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import logging
 from types import SimpleNamespace
 
 import pytest
 import src.clubbot.cogs.transcript as t_mod
 from src.clubbot.cogs.transcript import TranscriptCog
 from src.clubbot.config import Config
-from src.clubbot.services.jobs.queue import MemoryJobQueue, TranscriptJob
 
 
 class _FakeInteraction:
@@ -142,55 +140,6 @@ async def test_ack_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     inter3.response = _Resp(_HTTPError(499))
     ok3 = await cog._ack_interaction(inter3)
     assert ok3 is False
-
-
-@pytest.mark.asyncio
-async def test_stt_fallback_to_injected_queue(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Build STT cfg but provide injected MemoryJobQueue
-    cfg = _cfg(provider="stt")
-
-    # Avoid starting real JobRunner in __init__
-    class _FakeRunner:
-        def __init__(self, *a: object, **k: object) -> None:
-            pass
-
-        def start(self) -> None:
-            pass
-
-        async def stop(self) -> None:
-            pass
-
-    class _RunnerFactory:
-        @classmethod
-        def __class_getitem__(cls, item: object):  # type: ignore[override]
-            return _FakeRunner
-
-    monkeypatch.setattr(t_mod, "JobRunner", _RunnerFactory)
-
-    class _FakeSub:
-        def __init__(self, *_: object, **__: object) -> None:
-            pass
-
-        def start(self) -> None:
-            pass
-
-        async def stop(self) -> None:
-            pass
-
-    monkeypatch.setattr(t_mod, "TranscriptEventSubscriber", _FakeSub)
-    queue = MemoryJobQueue[TranscriptJob]()
-    svc = _Svc("ok")
-    cog = TranscriptCog(bot=SimpleNamespace(), config=cfg, transcript_service=svc, queue=queue)
-    inter = _FakeInteraction()
-    inter.user = SimpleNamespace(id=7)
-    log = logging.LoggerAdapter(logging.getLogger(__name__), {})
-    handled = await cog._handle_stt_request(
-        interaction=inter, log=log, url="https://v", req_id="r1", user_id=7
-    )
-    assert handled is True
-    # Job should be enqueued into MemoryJobQueue
-    out = await queue.pop()
-    assert isinstance(out, TranscriptJob) and out.request_id == "r1"
 
 
 def test_setup_function(monkeypatch: pytest.MonkeyPatch) -> None:

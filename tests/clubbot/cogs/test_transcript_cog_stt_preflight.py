@@ -7,7 +7,6 @@ import pytest
 from discord.ext import commands
 from src.clubbot.cogs.transcript import TranscriptCog
 from src.clubbot.config import Config
-from src.clubbot.services.jobs.queue import MemoryJobQueue, TranscriptJob
 from src.clubbot.services.transcript.types import SupportsEstimate
 
 
@@ -89,7 +88,7 @@ def make_cfg() -> Config:
 
 
 @pytest.mark.asyncio
-async def test_stt_preflight_blocks_too_long() -> None:
+async def test_stt_preflight_blocks_too_long(monkeypatch: pytest.MonkeyPatch) -> None:
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg()
@@ -99,18 +98,20 @@ async def test_stt_preflight_blocks_too_long() -> None:
         TRANSCRIPT_PROVIDER="stt",
         TRANSCRIPT_MAX_VIDEO_SECONDS=300,
         TRANSCRIPT_MAX_FILE_MB=100,
+        REDIS_URL="redis://fake",
     )
     svc = FakeTranscriptService(provider=FakeEstimateProvider(dur_s=3600, size_mb=10.0))
-    # Inject an in-memory queue for tests
-    cog = TranscriptCog(
-        bot, cfg, svc, queue=MemoryJobQueue[TranscriptJob]()
-    )  # starts runner but we won't enqueue
+    # Stub subscriber to avoid Redis
+    monkeypatch.setattr(
+        __import__("src.clubbot.cogs.transcript", fromlist=["TranscriptEventSubscriber"]),
+        "TranscriptEventSubscriber",
+        lambda *a, **k: __import__("types").SimpleNamespace(start=lambda: None, stop=lambda: None),
+    )
+    # Build cog; preflight should fail before enqueue
+    cog = TranscriptCog(bot, cfg, svc)
     interaction = FakeInteraction()
 
-    try:
-        await cog.transcript.callback(cog, interaction, "https://youtu.be/dQw4w9WgXcQ")
-    finally:
-        await cog._runner.stop()
+    await cog.transcript.callback(cog, interaction, "https://youtu.be/dQw4w9WgXcQ")
 
     assert interaction.calls, "Expected an error message"
     last = interaction.calls[-1]
@@ -120,7 +121,7 @@ async def test_stt_preflight_blocks_too_long() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stt_preflight_blocks_too_large() -> None:
+async def test_stt_preflight_blocks_too_large(monkeypatch: pytest.MonkeyPatch) -> None:
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix="!", intents=intents)
     cfg = make_cfg()
@@ -129,16 +130,20 @@ async def test_stt_preflight_blocks_too_large() -> None:
         TRANSCRIPT_PROVIDER="stt",
         TRANSCRIPT_MAX_VIDEO_SECONDS=5400,
         TRANSCRIPT_MAX_FILE_MB=25,
+        REDIS_URL="redis://fake",
     )
     # Duration okay, size too large (estimated)
     svc = FakeTranscriptService(provider=FakeEstimateProvider(dur_s=120, size_mb=48.0))
-    cog = TranscriptCog(bot, cfg, svc, queue=MemoryJobQueue[TranscriptJob]())
+    # Stub subscriber to avoid Redis
+    monkeypatch.setattr(
+        __import__("src.clubbot.cogs.transcript", fromlist=["TranscriptEventSubscriber"]),
+        "TranscriptEventSubscriber",
+        lambda *a, **k: __import__("types").SimpleNamespace(start=lambda: None, stop=lambda: None),
+    )
+    cog = TranscriptCog(bot, cfg, svc)
     interaction = FakeInteraction()
 
-    try:
-        await cog.transcript.callback(cog, interaction, "https://youtu.be/dQw4w9WgXcQ")
-    finally:
-        await cog._runner.stop()
+    await cog.transcript.callback(cog, interaction, "https://youtu.be/dQw4w9WgXcQ")
 
     # Should block on estimated size exceeding Whisper API limit
     assert interaction.calls, "Expected an error message"

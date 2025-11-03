@@ -62,9 +62,15 @@ async def test_ack_interaction_handles_not_found(monkeypatch: pytest.MonkeyPatch
     bot = SimpleNamespace()
     cfg = _cfg_base()
     service = _FakeService()
-
-    # Use injected queue to avoid RQ setup
-    cog = TranscriptCog(bot, cfg, service, queue=SimpleNamespace())
+    # Stub subscriber to avoid Redis
+    monkeypatch.setattr(
+        transcript_mod,
+        "TranscriptEventSubscriber",
+        lambda *a, **k: SimpleNamespace(start=lambda: None, stop=lambda: None),
+        raising=True,
+    )
+    # Construct cog without needing a real enqueuer for ack test
+    cog = TranscriptCog(bot, cfg, service)
     inter = _FakeInteraction()
     ok = await cog._ack_interaction(inter)
     assert ok is False
@@ -88,7 +94,15 @@ async def test_handle_stt_request_size_limit_user_error(monkeypatch: pytest.Monk
 
     cfg = _cfg_base()
     bot = SimpleNamespace()
-    cog = _Cog(bot, cfg, service, queue=SimpleNamespace())
+    # Stub subscriber and inject a no-op enqueuer
+    monkeypatch.setattr(
+        transcript_mod,
+        "TranscriptEventSubscriber",
+        lambda *a, **k: SimpleNamespace(start=lambda: None, stop=lambda: None),
+        raising=True,
+    )
+    enq = SimpleNamespace(enqueue_transcript=lambda **_: "job")
+    cog = _Cog(bot, cfg, service, enqueuer=enq)
     inter = SimpleNamespace()
     log = logging.LoggerAdapter(logging.getLogger(__name__), {})
     handled = await cog._handle_stt_request(

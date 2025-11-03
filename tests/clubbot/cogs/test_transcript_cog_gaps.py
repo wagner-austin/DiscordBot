@@ -85,12 +85,7 @@ async def test_transcript_stt_delegate(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda *a, **k: SimpleNamespace(start=lambda: None, stop=lambda: None),
     )
 
-    class _RunnerFactory:
-        @classmethod
-        def __class_getitem__(cls, item: object):
-            return lambda *a, **k: SimpleNamespace(start=lambda: None)
-
-    monkeypatch.setattr(t_mod, "JobRunner", _RunnerFactory)
+    # No JobRunner in STT path; only subscriber runs in bot process
 
     cog = _Cog(bot=SimpleNamespace(), config=cfg, transcript_service=SimpleNamespace())
     inter = _FakeInteraction()
@@ -201,7 +196,8 @@ async def test_handle_stt_eta_provider_branch(monkeypatch: pytest.MonkeyPatch) -
 
     class _FakeSTT:
         def estimate(self, url: str) -> tuple[int, float]:
-            return 120, 3.0
+            # Keep under default TRANSCRIPT_MAX_VIDEO_SECONDS (60) to avoid early-return
+            return 30, 3.0
 
         def estimate_eta_minutes(self, dur_s: int, approx_mb: float) -> int:
             calls["eta"] = True
@@ -213,20 +209,24 @@ async def test_handle_stt_eta_provider_branch(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(mod, "STTTranscriptProvider", _FakeSTT, raising=False)
     svc = SimpleNamespace(provider=_FakeSTT())
 
-    # Avoid JobRunner side-effects and provide a queue for enqueue
-    class _RunnerFactory:
-        @classmethod
-        def __class_getitem__(cls, item: object):
-            return lambda *a, **k: SimpleNamespace(start=lambda: None)
-
-    monkeypatch.setattr(t_mod, "JobRunner", _RunnerFactory)
-
-    cfg = _cfg()
-    from src.clubbot.services.jobs.queue import MemoryJobQueue
-
-    cog = TranscriptCog(
-        bot=SimpleNamespace(), config=cfg, transcript_service=svc, queue=MemoryJobQueue()
+    # Avoid Redis by stubbing subscriber; inject a fake enqueuer
+    monkeypatch.setattr(
+        t_mod,
+        "TranscriptEventSubscriber",
+        lambda *a, **k: SimpleNamespace(start=lambda: None, stop=lambda: None),
     )
+
+    class _FakeEnq:
+        def __init__(self) -> None:
+            self.called = False
+
+        def enqueue_transcript(self, *, request_id: str, url: str, user_id: int) -> str:
+            self.called = True
+            return "job-eta"
+
+    enq = _FakeEnq()
+    cfg = _cfg(provider="stt")
+    cog = TranscriptCog(bot=SimpleNamespace(), config=cfg, transcript_service=svc, enqueuer=enq)
     inter = _FakeInteraction()
     import logging as _logging
 

@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import io
 import logging
-import time
 
 import discord
 from discord import app_commands
@@ -12,14 +11,8 @@ from discord.ext import commands
 
 from ..config import Config, load_config
 from ..logging import set_request_id
-from ..services.jobs.helpers import (
-    default_retry_policy_factory,
-    failure_notifier_factory,
-)
 from ..services.jobs.notifier import TranscriptEventSubscriber
-from ..services.jobs.queue import JobQueueProto, TranscriptJob
 from ..services.jobs.rq_enqueuer import RQTranscriptEnqueuer, TranscriptEnqueuer
-from ..services.jobs.runner import JobRunner
 from ..services.transcript.app import TranscriptService
 from ..services.transcript.types import SupportsEstimate
 from ..utils.errors import UserInputError
@@ -34,7 +27,7 @@ class TranscriptCog(BaseCog):
         bot: commands.Bot,
         config: Config,
         transcript_service: TranscriptService,
-        queue: JobQueueProto[TranscriptJob] | None = None,
+        enqueuer: TranscriptEnqueuer | None = None,
     ) -> None:
         super().__init__()
         self.bot = bot
@@ -44,15 +37,11 @@ class TranscriptCog(BaseCog):
             getattr(config, "TRANSCRIPT_RATE_LIMIT", 2),
             getattr(config, "TRANSCRIPT_RATE_WINDOW_SECONDS", 60),
         )
-        # Background job queue and runner (enabled for STT provider or when injected)
-        self._queue: JobQueueProto[TranscriptJob] | None = None
-        self._runner: JobRunner[TranscriptJob] | None = None
+        # RQ enqueuer + event subscriber for STT provider
         self._enqueuer: TranscriptEnqueuer | None = None
         self._subscriber: TranscriptEventSubscriber | None = None
         provider = (self.config.TRANSCRIPT_PROVIDER or "youtube").strip().lower()
-        if queue is not None:
-            self._queue = queue
-        elif provider == "stt":
+        if provider == "stt":
             # RQ-mode for STT when no queue injected for tests: set up enqueuer and subscriber
             redis_url = (getattr(self.config, "REDIS_URL", None) or "").strip()
             if not redis_url:
@@ -63,7 +52,7 @@ class TranscriptCog(BaseCog):
                 if isinstance(retry_intervals, tuple)
                 else (60, 300)
             )
-            self._enqueuer = RQTranscriptEnqueuer(
+            self._enqueuer = enqueuer or RQTranscriptEnqueuer(
                 redis_url=redis_url,
                 queue_name="transcript",
                 job_timeout_s=int(getattr(self.config, "RQ_TRANSCRIPT_JOB_TIMEOUT_SEC", 600)),
@@ -82,32 +71,13 @@ class TranscriptCog(BaseCog):
                 max_attachment_mb=max_mb,
             )
             self._subscriber.start()
-        if self._queue is not None:
-            backend_name = type(self._queue).__name__
-            logging.getLogger(__name__).info(f"Queue backend: {backend_name}")
-            failure_cb = failure_notifier_factory(
-                notify_fn=self.notify_user,
-                user_error_type=UserInputError,
-                service_name="transcription",
-            )
-            retry_policy = default_retry_policy_factory(UserInputError)
-
-            self._runner = JobRunner[TranscriptJob](
-                queue=self._queue,
-                handler=self._handle_job,
-                failure_callback=failure_cb,
-                retry_policy=retry_policy,
-                max_concurrency=1,
-                retry_attempts=1,
-                retry_backoff=1.0,
-                idle_sleep=0.5,
-                logger=logging.getLogger(__name__),
-            )
-            self._runner.start()
-        else:
             logging.getLogger(__name__).info(
-                "Queue backend disabled (provider not using background jobs or using RQ)"
+                "Using RQ enqueuer; in-process runner disabled (queue=%s, channel=%s)",
+                getattr(self._enqueuer, "queue_name", "transcript"),
+                channel,
             )
+        else:
+            logging.getLogger(__name__).info("Background jobs disabled (captions provider)")
 
     @app_commands.command(
         name="transcript",
@@ -253,15 +223,10 @@ class TranscriptCog(BaseCog):
             await self.handle_user_error(interaction, log, msg)
             return True
 
-        # Enqueue via RQ enqueuer when available; otherwise fall back to injected queue (tests)
-        if self._enqueuer is not None:
-            _ = self._enqueuer.enqueue_transcript(request_id=req_id, url=url, user_id=user_id)
-        elif self._queue is not None:
-            await self._queue.enqueue(
-                TranscriptJob(request_id=req_id, url=url, user_id=user_id, queued_ts=time.time())
-            )
-        else:
-            raise RuntimeError("No background job backend configured for STT provider")
+        # Enqueue via RQ enqueuer
+        if self._enqueuer is None:
+            raise RuntimeError("RQ enqueuer not configured for STT provider")
+        _ = self._enqueuer.enqueue_transcript(request_id=req_id, url=url, user_id=user_id)
         est_min = max(1, int((dur_s + 59) // 60)) if dur_s else "?"
         # Estimate transcript size (KB)
         kbpm = float(getattr(self.config, "TRANSCRIPT_ESTIMATED_TEXT_KB_PER_MIN", 1.0))
@@ -293,47 +258,10 @@ class TranscriptCog(BaseCog):
         return True
 
     async def cog_unload(self) -> None:  # pragma: no cover - lifecycle
-        try:
-            if self._runner is not None:
-                await self._runner.stop()
-        finally:
-            if self._subscriber is not None:
-                await self._subscriber.stop()
+        if self._subscriber is not None:
+            await self._subscriber.stop()
 
-    async def _handle_job(self, job: TranscriptJob) -> None:
-        start = time.perf_counter()
-        res = await asyncio.to_thread(self.transcript_service.fetch_cleaned, job.url)
-        elapsed_s = max(0.0, time.perf_counter() - start)
-        # End-to-end time (including queue wait) if available
-        e2e_s = 0.0
-        if isinstance(job.queued_ts, float) and job.queued_ts > 0.0:
-            e2e_s = max(0.0, time.time() - job.queued_ts)
-        e2e_m = int(e2e_s // 60)
-        e2e_sec = int(e2e_s % 60)
-        e2e_txt = f"~{e2e_m} min {e2e_sec}s" if e2e_s > 0 else "~?s"
-
-        header = f"Transcript for <{res.url}> (req={job.request_id})"
-        content = f"{header}\nTotal time {e2e_txt}"
-        data = res.text.encode("utf-8")
-        # Enforce attachment size limit before DM
-        if self._is_attachment_too_large(data):
-            limit = self._get_attachment_limit_mb()
-            await self.notify_user(
-                job.user_id,
-                (
-                    f"Transcript is too large to attach (> {limit} MB) "
-                    f"(req={job.request_id}). Please try a shorter video."
-                ),
-            )
-            return
-        file = discord.File(fp=io.BytesIO(data), filename=f"transcript_{res.video_id}.txt")
-        await self.dm_file(job.user_id, content, file)
-        logging.getLogger(__name__).info(
-            "Transcript job completed req=%s elapsed=%.2fs e2e=%.2fs",
-            job.request_id,
-            elapsed_s,
-            e2e_s,
-        )
+    # Worker-side job handling moved into clubbot.workers.transcript
 
     # Failure handling and retry policy provided via helpers; no per-cog duplication
 
