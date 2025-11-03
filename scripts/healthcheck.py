@@ -85,6 +85,19 @@ def _check_redis(provider: str) -> bool:
         return False
 
 
+def _check_rq(provider: str) -> bool:
+    if provider != "stt":
+        return True
+    try:
+        from rq import Retry  # noqa: F401
+
+        _ok("health: RQ import shape OK (top-level Retry)")
+        return True
+    except Exception as e:
+        _warn(f"health: RQ import failed: {e}")
+        return False
+
+
 def main() -> int:
     ok = True
     ok &= _check_discord_token()
@@ -92,6 +105,7 @@ def main() -> int:
     ok &= _check_openai(provider)
     ok &= _check_chunking(provider)
     ok &= _check_redis(provider)
+    ok &= _check_rq(provider)
     return 0 if ok else 1
 
 
