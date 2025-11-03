@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from discord.ext import commands
 
 from .config import Config, load_config, require_token
+from .services.digits.app import DigitService
 from .services.metrics import NullMetricsService, SQLiteMetricsService
 from .services.qr_app import QRService
 from .services.transcript.app import TranscriptService
@@ -23,6 +24,7 @@ class ServiceContainer:
     qr_service: QRService
     metrics: SQLiteMetricsService | NullMetricsService
     transcript_service: TranscriptService | None = None
+    digits_service: DigitService | None = None
 
     @classmethod
     def from_env(cls) -> ServiceContainer:
@@ -30,6 +32,9 @@ class ServiceContainer:
         require_token(cfg)
         qr_service = QRService(cfg)
         transcript_service = TranscriptService(cfg)
+        digits_service = None
+        if cfg.HANDWRITING_API_URL:
+            digits_service = DigitService(cfg)
         if cfg.METRICS_ENABLED:
             metrics: SQLiteMetricsService | NullMetricsService = SQLiteMetricsService(
                 sqlite_path=cfg.METRICS_SQLITE_PATH,
@@ -42,12 +47,14 @@ class ServiceContainer:
             qr_service=qr_service,
             transcript_service=transcript_service,
             metrics=metrics,
+            digits_service=digits_service,
         )
 
     # Bot wiring
     async def wire_bot_async(self, bot: commands.Bot) -> None:
         """Attach all cogs to the bot (idempotent)."""
         # Import locally to avoid import cycles at module import time
+        from .cogs.digits import DigitsCog
         from .cogs.invite import InviteCog
         from .cogs.qr import QRCog
         from .cogs.transcript import TranscriptCog
@@ -65,3 +72,6 @@ class ServiceContainer:
             svc = self.transcript_service or TranscriptService(self.cfg)
             await bot.add_cog(TranscriptCog(bot, self.cfg, svc))
             logger.info("Loaded cog: TranscriptCog")
+        if self.digits_service is not None and bot.get_cog("DigitsCog") is None:
+            await bot.add_cog(DigitsCog(bot, self.cfg, self.digits_service))
+            logger.info("Loaded cog: DigitsCog")
