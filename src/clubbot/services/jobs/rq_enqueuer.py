@@ -42,7 +42,7 @@ class RQTranscriptEnqueuer(TranscriptEnqueuer):
         retry = Retry(max=self.retry_max, interval=list(self.retry_intervals_s))
         payload = {"request_id": request_id, "url": url, "user_id": user_id}
         job = q.enqueue(
-            "src.clubbot.workers.transcript.process_transcript_job",
+            "clubbot.workers.transcript.process_transcript_job",
             payload,
             job_timeout=self.job_timeout_s,
             result_ttl=self.result_ttl_s,
