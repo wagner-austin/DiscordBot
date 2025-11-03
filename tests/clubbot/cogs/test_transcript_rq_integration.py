@@ -133,6 +133,6 @@ async def test_transcript_cog_stt_enqueues_via_rq_top_level_retry(
     assert handled is True
     assert fake_queue.last_args is not None
     fpath, payload = fake_queue.last_args
-    assert fpath == "src.clubbot.workers.transcript.process_transcript_job"
+    assert fpath == "clubbot.workers.transcript.process_transcript_job"
     assert isinstance(payload, dict)
     assert payload["request_id"] == "rid-1" and payload["user_id"] == 42
