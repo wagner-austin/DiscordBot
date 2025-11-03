@@ -107,3 +107,37 @@ def test_probe_stream_info_parses_json(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     container, codec = ch._probe_stream_info("/tmp/a.m4a")
     assert container == "m4a" and codec == "aac"
+
+
+def test_safe_size_mb_missing_file() -> None:
+    ch = AudioChunker()
+    assert ch._safe_size_mb("/path/does/not/exist.xyz") == 0.0
+
+
+def test_detect_silence_skips_bad_numbers(monkeypatch: pytest.MonkeyPatch) -> None:
+    ch = AudioChunker()
+    sample = "\n".join(
+        [
+            "silence_end: notanumber | silence_duration: 1.0",
+            "silence_end: 2.00 | silence_duration: 0.5",
+        ]
+    )
+    monkeypatch.setattr(
+        __import__("subprocess"),
+        "run",
+        lambda *a, **k: SimpleNamespace(stdout=sample, stderr=""),
+        raising=True,
+    )
+    points = ch._detect_silence("/tmp/a.m4a", 10.0)
+    assert points == [2.0]
+
+
+def test_calculate_split_points_variants(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("DEBUG")
+    ch = AudioChunker(target_chunk_mb=20.0, max_chunk_duration_seconds=10.0)
+    empty = ch._calculate_split_points([], total_duration=5.0, estimated_mb=1.0)
+    assert empty == []
+    pts = ch._calculate_split_points([], total_duration=25.0, estimated_mb=25.0)
+    assert pts and all(0 < p < 25.0 for p in pts)
+    pts2 = ch._calculate_split_points([8.0, 16.6], total_duration=25.0, estimated_mb=25.0)
+    assert any(abs(p - 16.6) < 1e-6 for p in pts2)
