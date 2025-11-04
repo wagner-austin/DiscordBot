@@ -73,5 +73,26 @@ class ServiceContainer:
             await bot.add_cog(TranscriptCog(bot, self.cfg, svc))
             logger.info("Loaded cog: TranscriptCog")
         if self.digits_service is not None and bot.get_cog("DigitsCog") is None:
-            await bot.add_cog(DigitsCog(bot, self.cfg, self.digits_service))
+            # Optionally wire RQ enqueuer for digits training when REDIS_URL is set
+            enqueuer = None
+            redis_url = (getattr(self.cfg, "REDIS_URL", None) or "").strip()
+            if redis_url:
+                try:
+                    from .services.jobs.digits_enqueuer import RQDigitsEnqueuer
+
+                    enqueuer = RQDigitsEnqueuer(
+                        redis_url=redis_url,
+                        queue_name="digits",
+                        job_timeout_s=25200,
+                        result_ttl_s=86400,
+                        failure_ttl_s=604800,
+                        retry_max=2,
+                        retry_intervals_s=(60, 300),
+                    )
+                except (RuntimeError, ValueError, ImportError, OSError, TypeError) as e:
+                    logging.getLogger(__name__).warning(
+                        "Failed to initialize digits RQ enqueuer: %s", e
+                    )
+                    enqueuer = None
+            await bot.add_cog(DigitsCog(bot, self.cfg, self.digits_service, enqueuer=enqueuer))
             logger.info("Loaded cog: DigitsCog")
