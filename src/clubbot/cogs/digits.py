@@ -12,6 +12,8 @@ from ..config import Config
 from ..logging import set_request_id
 from ..services.digits.app import DigitService
 from ..services.handai.client import HandwritingAPIError, PredictResult
+from ..services.jobs.digits_enqueuer import DigitsEnqueuer
+from ..services.jobs.digits_events import DEFAULT_DIGITS_EVENTS_CHANNEL
 from ..utils.errors import UserInputError
 from ..utils.rate_limiter import RateLimiter
 from .base import BaseCog
@@ -23,12 +25,39 @@ _ALLOWED: Final[tuple[str, ...]] = (_PNG, _JPEG, _JPG)
 
 
 class DigitsCog(BaseCog):
-    def __init__(self, bot: commands.Bot, config: Config, service: DigitService) -> None:
+    def __init__(
+        self,
+        bot: commands.Bot,
+        config: Config,
+        service: DigitService,
+        enqueuer: DigitsEnqueuer | None = None,
+    ) -> None:
         super().__init__()
         self.bot = bot
         self.config = config
         self.service = service
         self.rate_limiter = RateLimiter(config.DIGITS_RATE_LIMIT, config.DIGITS_RATE_WINDOW_SECONDS)
+        # Optional training enqueuer (RQ)
+        self._enqueuer: DigitsEnqueuer | None = enqueuer
+        # Optional events subscriber for training progress/completion
+        self._subscriber = None
+        redis_url = (getattr(self.config, "REDIS_URL", None) or "").strip()
+        if redis_url:
+            try:
+                from ..services.jobs.digits_notifier import DigitsEventSubscriber
+
+                self._subscriber = DigitsEventSubscriber(
+                    self.bot, redis_url=redis_url, events_channel=DEFAULT_DIGITS_EVENTS_CHANNEL
+                )
+                self._subscriber.start()
+                logging.getLogger(__name__).info(
+                    "Digits events subscriber started (channel=%s)",
+                    DEFAULT_DIGITS_EVENTS_CHANNEL,
+                )
+            except (RuntimeError, ValueError, ImportError, OSError, TypeError) as e:
+                logging.getLogger(__name__).warning(
+                    "Failed to start digits events subscriber: %s", e
+                )
 
     @app_commands.command(name="read", description="Recognize a handwritten digit from an image")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
@@ -85,6 +114,66 @@ class DigitsCog(BaseCog):
             content=content, ephemeral=not self.config.DIGITS_PUBLIC_RESPONSES
         )
         log.info("Digit read sent successfully")
+
+    @app_commands.command(name="train", description="Queue a background training job (digits)")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
+    async def train(self, interaction: discord.Interaction) -> None:
+        # Early ack like in read()
+        if not await self._ack_interaction(interaction):
+            return
+
+        request_id = self.new_request_id()
+        set_request_id(request_id)
+        log = self.request_logger(request_id)
+        user_id = self._extract_int_attr(interaction.user, "id")
+        if user_id is None:
+            await self.handle_user_error(interaction, log, "Could not determine your user id")
+            return
+
+        if self._enqueuer is None:
+            await interaction.followup.send("Training is not configured.", ephemeral=True)
+            log.info("Train requested but enqueuer is not configured")
+            return
+
+        # Default training parameters (no options for now)
+        model_id = "mnist_resnet18_v1"
+        epochs = 1
+        batch_size = 256
+        lr = 0.0015
+        seed = 42
+        augment = True
+        notes = "requested via /train"
+
+        try:
+            job_id = self._enqueuer.enqueue_train(
+                request_id=request_id,
+                user_id=user_id,
+                model_id=model_id,
+                epochs=epochs,
+                batch_size=batch_size,
+                lr=lr,
+                seed=seed,
+                augment=augment,
+                notes=notes,
+            )
+        except Exception as exc:
+            await self.handle_exception(interaction, log, exc)
+            return
+
+        await interaction.followup.send(
+            (f"Queued training for '{model_id}'. " f"Request: {request_id}. Job: {job_id}."),
+            ephemeral=not self.config.DIGITS_PUBLIC_RESPONSES,
+        )
+        log.info("Queued training req=%s job=%s", request_id, job_id)
+
+    async def cog_unload(self) -> None:  # pragma: no cover - lifecycle
+        sub = getattr(self, "_subscriber", None)
+        if sub is not None:
+            try:
+                await sub.stop()
+            except Exception:
+                logging.getLogger(__name__).debug("Digits subscriber stop failed")
 
     async def _ack_interaction(self, interaction: discord.Interaction) -> bool:
         try:
