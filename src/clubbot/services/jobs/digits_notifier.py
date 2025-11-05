@@ -9,14 +9,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands
 
-from .digits_events import (
-    DEFAULT_DIGITS_EVENTS_CHANNEL,
-    DigitsTrainCompletedEvent,
-    DigitsTrainFailedEvent,
-    DigitsTrainProgressEvent,
-    DigitsTrainStartedEvent,
-    try_decode_event,
-)
+from .digits_events import DEFAULT_DIGITS_EVENTS_CHANNEL, EventV1, try_decode_event
 
 if TYPE_CHECKING:  # narrow async redis interface for typing
     from typing import Protocol
@@ -56,12 +49,7 @@ else:  # pragma: no cover - runtime import only
     BotType = commands.Bot
 
 
-Event = (
-    DigitsTrainStartedEvent
-    | DigitsTrainProgressEvent
-    | DigitsTrainCompletedEvent
-    | DigitsTrainFailedEvent
-)
+Event = EventV1
 
 
 def _make_logger() -> logging.Logger:
@@ -115,7 +103,7 @@ class DigitsEventSubscriber:
                 await pubsub.close()
 
     async def _handle_event(self, event: Event) -> None:
-        if event["type"] == "started":
+        if event["type"] == "digits.train.started.v1":
             await self._on_started(
                 user_id=event["user_id"],
                 request_id=event["request_id"],
@@ -123,31 +111,32 @@ class DigitsEventSubscriber:
                 total_epochs=event["total_epochs"],
             )
             return
-        if event["type"] == "progress":
+        if event["type"] == "digits.train.epoch.v1":
             await self._on_progress(
                 user_id=event["user_id"],
                 request_id=event["request_id"],
                 epoch=event["epoch"],
                 total_epochs=event["total_epochs"],
-                val_acc=event.get("val_acc"),
+                val_acc=event["val_acc"],
             )
             return
-        if event["type"] == "completed":
+        if event["type"] == "digits.train.completed.v1":
             await self._on_completed(
                 user_id=event["user_id"],
                 request_id=event["request_id"],
                 model_id=event["model_id"],
-                run_id=event["run_id"],
+                run_id=(event["run_id"] or ""),
                 val_acc=event["val_acc"],
             )
             return
-        await self._on_failed(
-            user_id=event["user_id"],
-            request_id=event["request_id"],
-            model_id=event["model_id"],
-            error_kind=event["error_kind"],
-            message=event["message"],
-        )
+        if event["type"] == "digits.train.failed.v1":
+            await self._on_failed(
+                user_id=event["user_id"],
+                request_id=event["request_id"],
+                model_id=event["model_id"],
+                error_kind=event["error_kind"],
+                message=event["message"],
+            )
 
     async def _on_started(
         self, *, user_id: int, request_id: str, model_id: str, total_epochs: int

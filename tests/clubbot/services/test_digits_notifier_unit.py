@@ -32,30 +32,43 @@ async def test_handle_event_branches_send_dm() -> None:
     sub = dn.DigitsEventSubscriber(bot, redis_url="redis://fake")
 
     await sub._handle_event(
-        {"type": "started", "request_id": "r", "user_id": 1, "model_id": "m", "total_epochs": 2}
+        {
+            "type": "digits.train.started.v1",
+            "request_id": "r",
+            "user_id": 1,
+            "model_id": "m",
+            "run_id": None,
+            "ts": "t",
+            "total_epochs": 2,
+        }
     )
     assert any("Training started" in m for m in bot.user.messages)
 
     await sub._handle_event(
         {
-            "type": "progress",
+            "type": "digits.train.epoch.v1",
             "request_id": "r",
             "user_id": 1,
             "model_id": "m",
+            "run_id": None,
+            "ts": "t",
             "epoch": 1,
             "total_epochs": 2,
+            "train_loss": 0.1,
             "val_acc": 0.9,
+            "time_s": 1.0,
         }
     )
     assert any("Training progress" in m for m in bot.user.messages)
 
     await sub._handle_event(
         {
-            "type": "completed",
+            "type": "digits.train.completed.v1",
             "request_id": "r",
             "user_id": 1,
             "model_id": "m",
-            "run_id": "rid",
+            "run_id": None,
+            "ts": "t",
             "val_acc": 0.95,
         }
     )
@@ -63,10 +76,12 @@ async def test_handle_event_branches_send_dm() -> None:
 
     await sub._handle_event(
         {
-            "type": "failed",
+            "type": "digits.train.failed.v1",
             "request_id": "r",
             "user_id": 1,
             "model_id": "m",
+            "run_id": None,
+            "ts": "t",
             "error_kind": "user",
             "message": "bad payload",
         }
@@ -75,10 +90,12 @@ async def test_handle_event_branches_send_dm() -> None:
 
     await sub._handle_event(
         {
-            "type": "failed",
+            "type": "digits.train.failed.v1",
             "request_id": "r",
             "user_id": 1,
             "model_id": "m",
+            "run_id": None,
+            "ts": "t",
             "error_kind": "system",
             "message": "boom",
         }
