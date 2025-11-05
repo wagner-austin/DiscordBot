@@ -144,7 +144,7 @@ async def test_read_rate_limit_message_on_second_call() -> None:
 
 
 @pytest.mark.asyncio
-async def test_read_handles_5xx_maps_to_handle_exception() -> None:
+async def test_read_handles_5xx_surfaces_api_error() -> None:
     intents = discord.Intents.default()
     bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -152,9 +152,11 @@ async def test_read_handles_5xx_maps_to_handle_exception() -> None:
         def __init__(self, *a: object, **k: object) -> None:
             super().__init__(*a, **k)
             self.seen: list[str] = []
+            self.msgs: list[str] = []
 
-        async def handle_exception(self, interaction, log, exc: Exception) -> None:
-            self.seen.append("exc")
+        async def handle_user_error(self, interaction, log, message: str) -> None:
+            self.seen.append("user")
+            self.msgs.append(message)
 
     service = FakeService(raise_exc=HandwritingAPIError(500, "boom"))
     cfg = make_cfg(public=True)
@@ -162,4 +164,5 @@ async def test_read_handles_5xx_maps_to_handle_exception() -> None:
     inter = FakeInteraction()
     att = FakeAttachment(filename="d.png", content_type="image/png", size=10)
     await cog.read.callback(cog, inter, att)
-    assert "exc" in cog.seen
+    assert "user" in cog.seen
+    assert any("boom" in m or "HTTP" in m or "internal_error" in m for m in cog.msgs)

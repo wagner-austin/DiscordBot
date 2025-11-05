@@ -101,13 +101,14 @@ class HandwritingClient(HandwritingReader):
                 if attempt < self._retries:
                     await asyncio.sleep(1.0)
                     continue
-                msg = "Timeout calling handwriting service"
-                raise HandwritingAPIError(504, msg, code="timeout") from e
+                raise HandwritingAPIError(504, "Request timed out", code="timeout") from e
             except httpx.RequestError as e:
                 if attempt < self._retries:
                     await asyncio.sleep(1.0)
                     continue
-                raise HandwritingAPIError(502, "Service unavailable") from e
+                # Surface a clear, specific message even for transport errors
+                msg = f"Service unavailable: {e}"
+                raise HandwritingAPIError(502, msg, code="service_unavailable") from e
             except (ValueError, TypeError) as e:
                 # Response decoding/shape errors are not retriable here
                 raise HandwritingAPIError(500, "Invalid response body") from e

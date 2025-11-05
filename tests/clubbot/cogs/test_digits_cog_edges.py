@@ -151,7 +151,8 @@ async def test_user_error_mappings_and_size_limit(monkeypatch: pytest.MonkeyPatc
     assert any("unsupported" in msgs[2].lower() for _ in [0])
     assert any("process" in msgs[3].lower() for _ in [0])
     assert any("timed out" in msgs[4].lower() for _ in [0])
-    assert any("status" in msgs[5].lower() for _ in [0])
+    # New behavior: surface API code/message (no generic fallback)
+    assert any("internal_error" in msgs[5].lower() or "http" in msgs[5].lower() for _ in [0])
 
 
 def test_format_helpers() -> None:

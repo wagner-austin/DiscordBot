@@ -99,11 +99,9 @@ class DigitsCog(BaseCog):
             await self.handle_user_error(interaction, log, str(e))
             return
         except HandwritingAPIError as e:
+            # Always present the API's structured error to the user; avoid generic fallbacks.
             msg = _user_message_from_api_error(e)
-            if 400 <= e.status < 500:
-                await self.handle_user_error(interaction, log, msg)
-            else:
-                await self.handle_exception(interaction, log, e)
+            await self.handle_user_error(interaction, log, msg)
             return
         except Exception as exc:
             await self.handle_exception(interaction, log, exc)
@@ -242,6 +240,8 @@ def _format_result(res: PredictResult) -> str:
 
 
 def _user_message_from_api_error(e: HandwritingAPIError) -> str:
+    # Prefer API-provided code/message; include request id when available.
+    # Provide friendly messages for common client errors.
     if e.status == 401:
         return "Service is not authorized. Please contact an admin."
     if e.status == 413 or (e.code == "too_large"):
@@ -251,5 +251,10 @@ def _user_message_from_api_error(e: HandwritingAPIError) -> str:
     if e.status == 400 and (e.code in {"invalid_image", "bad_dimensions", "preprocessing_failed"}):
         return "Could not process image. Please try another image."
     if e.status == 504 or e.code == "timeout":
-        return "Service timed out; please try again."
-    return f"Request failed (status={e.status}). Please try again."
+        # Include API message if present
+        base = str(e) or "Request timed out"
+        return f"timeout: {base}" + (f" (req {e.request_id})" if e.request_id else "")
+    # Default: surface API code/message with req id (no generic fallback)
+    code = e.code or "internal_error"
+    base = str(e) or f"HTTP {e.status}"
+    return f"{code}: {base}" + (f" (req {e.request_id})" if e.request_id else "")
