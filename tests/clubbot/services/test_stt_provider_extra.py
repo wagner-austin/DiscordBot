@@ -398,3 +398,75 @@ def test_as_float_edge_cases() -> None:
     assert stt_mod._as_float("7.25") == 7.25
     assert stt_mod._as_float("x") == 0.0
     assert stt_mod._as_float(object()) == 0.0
+
+
+def test_transcribe_chunked_cleanup_skips_original(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_openai(monkeypatch)
+    p = STTTranscriptProvider(
+        api_key="x",
+        max_video_seconds=9999,
+        max_file_mb=25,
+        enable_chunking=True,
+    )
+    monkeypatch.setattr(p, "_ffmpeg_available", lambda: True, raising=True)
+    monkeypatch.setattr(p, "_get_audio_duration", lambda _p: 10.0, raising=True)
+
+    # Create original audio file and a temporary chunk file to be deleted
+    fd, orig = tempfile.mkstemp(prefix="orig_", suffix=".m4a")
+    os.close(fd)
+    cfd, cpath = tempfile.mkstemp(prefix="chunk_", suffix=".m4a")
+    os.close(cfd)
+    with open(orig, "wb") as f:
+        f.write(b"data")
+    with open(cpath, "wb") as f:
+        f.write(b"x")
+
+    from src.clubbot.services.transcript.types import AudioChunk, TranscriptSegment
+
+    class _FakeChunker:
+        def __init__(self, *a: object, **k: object) -> None:
+            pass
+
+        def chunk_audio(self, audio_path: str, duration: float, size_mb: float):
+            # Return both a pass-through (same as original) and a distinct chunk
+            return [
+                AudioChunk(
+                    path=audio_path,
+                    start_seconds=0.0,
+                    duration_seconds=duration,
+                    size_bytes=10,
+                ),
+                AudioChunk(
+                    path=cpath,
+                    start_seconds=0.0,
+                    duration_seconds=duration,
+                    size_bytes=10,
+                ),
+            ]
+
+    class _FakePT:
+        def __init__(self, *a: object, **k: object) -> None:
+            pass
+
+        def transcribe_chunks(self, chunks):
+            return [
+                [TranscriptSegment(text="ok", start=0.0, duration=1.0)],
+                [TranscriptSegment(text="ok", start=0.0, duration=1.0)],
+            ]
+
+    monkeypatch.setattr(stt_mod, "AudioChunker", _FakeChunker, raising=True)
+    monkeypatch.setattr(stt_mod, "ParallelTranscriber", _FakePT, raising=True)
+    monkeypatch.setattr(
+        stt_mod,
+        "TranscriptMerger",
+        lambda: SimpleNamespace(merge=lambda pairs: []),
+        raising=True,
+    )
+
+    try:
+        _ = p._transcribe_chunked(orig)
+        # Original remains; second chunk removed
+        assert os.path.exists(orig) and not os.path.exists(cpath)
+    finally:
+        with __import__("contextlib").suppress(Exception):
+            os.remove(orig)
