@@ -181,21 +181,23 @@ class TranscriptCog(BaseCog):
         """Return a user-facing error message if size exceeds limit and chunking is unavailable."""
         max_mb = float(getattr(self.config, "TRANSCRIPT_MAX_FILE_MB", 0))
         chunking_enabled = bool(getattr(self.config, "TRANSCRIPT_ENABLE_CHUNKING", True))
-        if approx_mb and max_mb > 0 and approx_mb > max_mb:
-            can_chunk = False
-            if chunking_enabled:
-                try:
-                    from shutil import which  # local import to avoid global dependency
+        over_limit = approx_mb and max_mb > 0 and approx_mb > max_mb
+        if not over_limit:
+            return None
+        can_chunk = False
+        if chunking_enabled:
+            try:
+                from shutil import which  # local import to avoid global dependency
 
-                    can_chunk = bool(which("ffmpeg") and which("ffprobe"))
-                except Exception:  # pragma: no cover - environment dependent
-                    can_chunk = False
-            if not can_chunk:
-                return (
-                    f"Audio file is estimated at ~{int(approx_mb)} MB, which exceeds "
-                    f"Whisper API's {int(max_mb)} MB limit. Try a shorter video."
-                )
-        return None
+                can_chunk = bool(which("ffmpeg") and which("ffprobe"))
+            except Exception:  # pragma: no cover - environment dependent
+                can_chunk = False
+        if can_chunk:
+            return None
+        return (
+            f"Audio file is estimated at ~{int(approx_mb)} MB, which exceeds "
+            f"Whisper API's {int(max_mb)} MB limit. Try a shorter video."
+        )
 
     async def _handle_stt_request(
         self,
