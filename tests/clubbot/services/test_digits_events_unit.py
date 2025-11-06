@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from src.clubbot.services.jobs.digits_events import (
     DEFAULT_DIGITS_EVENTS_CHANNEL,
     encode_event,
@@ -124,3 +125,17 @@ def test_digits_events_decode_failed_invalid_types() -> None:
         "message": "msg",
     }
     assert try_decode_event(encode_event(bad)) is None
+
+
+def test_parse_json_obj_drops_non_string_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    import json as _json
+
+    import src.clubbot.services.jobs.digits_events as mod
+
+    # Monkeypatch json.loads to return a dict with a non-string key
+    def _fake_loads(_s: str) -> dict[object, object]:
+        return {1: "x", "type": "digits.train.completed.v1"}
+
+    monkeypatch.setattr(_json, "loads", _fake_loads, raising=True)
+    # Unknown/incomplete payload should return None, exercising non-string key branch
+    assert mod.try_decode_event("{}") is None
