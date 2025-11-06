@@ -17,11 +17,18 @@ def test_digits_events_encode_decode_roundtrip() -> None:
         "run_id": None,
         "ts": "2025-01-01T00:00:00+00:00",
         "total_epochs": 10,
+        # Optional extras should round-trip when present
+        "cpu_cores": 2,
+        "optimal_threads": 2,
+        "optimal_workers": 0,
+        "max_batch_size": 64,
+        "device": "cpu",
     }
     s = encode_event(started)  # should be JSON
     evt = try_decode_event(s)
     assert evt is not None and evt["type"] == "digits.train.started.v1"
     assert DEFAULT_DIGITS_EVENTS_CHANNEL == "digits:events"
+    assert evt.get("cpu_cores") == 2 and evt.get("max_batch_size") == 64 and evt.get("device") == "cpu"
 
     progress = {
         "type": "digits.train.epoch.v1",

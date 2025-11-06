@@ -114,6 +114,17 @@ class DigitsEventSubscriber:
                 request_id=event["request_id"],
                 model_id=event["model_id"],
                 total_epochs=event["total_epochs"],
+                cpu_cores=(event.get("cpu_cores") if isinstance(event.get("cpu_cores"), int) else None),
+                optimal_threads=(
+                    event.get("optimal_threads") if isinstance(event.get("optimal_threads"), int) else None
+                ),
+                optimal_workers=(
+                    event.get("optimal_workers") if isinstance(event.get("optimal_workers"), int) else None
+                ),
+                max_batch_size=(
+                    event.get("max_batch_size") if isinstance(event.get("max_batch_size"), int) else None
+                ),
+                device=(event.get("device") if isinstance(event.get("device"), str) else None),
             )
             return
         if event["type"] == "digits.train.epoch.v1":
@@ -144,15 +155,39 @@ class DigitsEventSubscriber:
             )
 
     async def _on_started(
-        self, *, user_id: int, request_id: str, model_id: str, total_epochs: int
+        self,
+        *,
+        user_id: int,
+        request_id: str,
+        model_id: str,
+        total_epochs: int,
+        cpu_cores: int | None = None,
+        optimal_threads: int | None = None,
+        optimal_workers: int | None = None,
+        max_batch_size: int | None = None,
+        device: str | None = None,
     ) -> None:
+        desc_lines = [
+            f"Model: `{model_id}`",
+            f"Request: `{request_id}`",
+            f"Total epochs: `{total_epochs}`",
+        ]
+        env_bits: list[str] = []
+        if isinstance(cpu_cores, int):
+            env_bits.append(f"cpu_cores={cpu_cores}")
+        if isinstance(optimal_threads, int):
+            env_bits.append(f"optimal_threads={optimal_threads}")
+        if isinstance(optimal_workers, int):
+            env_bits.append(f"optimal_workers={optimal_workers}")
+        if isinstance(max_batch_size, int):
+            env_bits.append(f"max_batch_size={max_batch_size}")
+        if isinstance(device, str) and device:
+            env_bits.append(f"device={device}")
+        if env_bits:
+            desc_lines.append("`" + " ".join(env_bits) + "`")
         embed = discord.Embed(
             title="🟦 Training Started",
-            description=(
-                f"Model: `{model_id}`\n"
-                f"Request: `{request_id}`\n"
-                f"Total epochs: `{total_epochs}`"
-            ),
+            description="\n".join(desc_lines),
             color=0x3498DB,
         )
         await self._notify(user_id, request_id, embed)

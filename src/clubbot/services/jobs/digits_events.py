@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, TypedDict, NotRequired
 
 DEFAULT_DIGITS_EVENTS_CHANNEL: Final[str] = "digits:events"
 
@@ -14,6 +14,12 @@ class StartedV1(TypedDict):
     run_id: str | None
     ts: str
     total_epochs: int
+    # Optional rich context (if provided by producer)
+    cpu_cores: NotRequired[int]
+    optimal_threads: NotRequired[int]
+    optimal_workers: NotRequired[int]
+    max_batch_size: NotRequired[int]
+    device: NotRequired[str]
 
 
 class EpochV1(TypedDict):
@@ -87,6 +93,22 @@ def try_decode_event(payload: str) -> EventV1 | None:
                 "ts": ts,
                 "total_epochs": tot,
             }
+            # Optional extras
+            cpu = obj.get("cpu_cores")
+            if isinstance(cpu, int):
+                out_st["cpu_cores"] = cpu
+            thr = obj.get("optimal_threads")
+            if isinstance(thr, int):
+                out_st["optimal_threads"] = thr
+            w = obj.get("optimal_workers")
+            if isinstance(w, int):
+                out_st["optimal_workers"] = w
+            bs = obj.get("max_batch_size")
+            if isinstance(bs, int):
+                out_st["max_batch_size"] = bs
+            dev = obj.get("device")
+            if isinstance(dev, str):
+                out_st["device"] = dev
             return out_st
         return None
     if typ == "digits.train.epoch.v1":
