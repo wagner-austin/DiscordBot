@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from typing import Final, Literal, NotRequired, TypedDict
@@ -69,7 +69,9 @@ def try_decode_event(payload: str) -> EventV1 | None:
     if obj is None:
         return None
     typ = obj.get("type")
-    from typing import Callable as _Callable\n    handlers: dict[str, _Callable[[dict[str, object]], EventV1 | None]] = {
+    from collections.abc import Callable as _Callable
+
+    handlers: dict[str, _Callable[[dict[str, object]], EventV1 | None]] = {
         "digits.train.started.v1": _decode_started,
         "digits.train.epoch.v1": _decode_epoch,
         "digits.train.completed.v1": _decode_completed,

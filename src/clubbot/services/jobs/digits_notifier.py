@@ -114,15 +114,23 @@ class DigitsEventSubscriber:
                 request_id=event["request_id"],
                 model_id=event["model_id"],
                 total_epochs=event["total_epochs"],
-                cpu_cores=(event.get("cpu_cores") if isinstance(event.get("cpu_cores"), int) else None),
+                cpu_cores=(
+                    event.get("cpu_cores") if isinstance(event.get("cpu_cores"), int) else None
+                ),
                 optimal_threads=(
-                    event.get("optimal_threads") if isinstance(event.get("optimal_threads"), int) else None
+                    event.get("optimal_threads")
+                    if isinstance(event.get("optimal_threads"), int)
+                    else None
                 ),
                 optimal_workers=(
-                    event.get("optimal_workers") if isinstance(event.get("optimal_workers"), int) else None
+                    event.get("optimal_workers")
+                    if isinstance(event.get("optimal_workers"), int)
+                    else None
                 ),
                 max_batch_size=(
-                    event.get("max_batch_size") if isinstance(event.get("max_batch_size"), int) else None
+                    event.get("max_batch_size")
+                    if isinstance(event.get("max_batch_size"), int)
+                    else None
                 ),
                 device=(event.get("device") if isinstance(event.get("device"), str) else None),
             )
