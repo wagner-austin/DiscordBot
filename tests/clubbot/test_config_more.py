@@ -94,3 +94,21 @@ def test_int_helper_valid_and_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QRCODE_RATE_LIMIT", "bad")
     cfg2 = load_config()
     assert cfg2.QRCODE_RATE_LIMIT == 1
+
+
+def test_load_file_overrides_non_dict_ignored(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    # Force tomllib.load to return a non-dict object to exercise the branch
+    toml = tmp_path / "clubbot.toml"
+    toml.write_text("[section]\nkey=1\n", encoding="utf-8")
+    monkeypatch.setenv("CLUBBOT_CONFIG", str(toml))
+    monkeypatch.setenv("DISCORD_TOKEN", "x")
+
+    import tomllib as _tomllib
+
+    def _fake_load(_f: object) -> object:
+        return [1, 2, 3]
+
+    monkeypatch.setattr(_tomllib, "load", _fake_load, raising=True)
+    cfg = load_config()
+    # Should fall back to defaults (i.e., a real Config still created)
+    assert isinstance(cfg, Config)
