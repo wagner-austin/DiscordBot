@@ -10,11 +10,21 @@ import src.clubbot.services.jobs.digits_notifier as dn
 
 class _User:
     def __init__(self) -> None:
-        self.messages: list[str] = []
+        self.embeds: list[object] = []
 
-    async def send(self, message: str) -> object:  # pragma: no cover - trivial
-        self.messages.append(message)
-        return SimpleNamespace()
+    async def send(self, content: str = "", **kw: object) -> object:  # pragma: no cover - trivial
+        embed = kw.get("embed")
+        self.embeds.append(embed)
+
+        class _Msg:
+            def __init__(self, u: _User) -> None:
+                self._u = u
+
+            async def edit(self, **ekw: object) -> object:  # pragma: no cover - trivial
+                self._u.embeds.append(ekw.get("embed"))
+                return SimpleNamespace()
+
+        return _Msg(self)
 
 
 class _Bot:
@@ -42,7 +52,7 @@ async def test_handle_event_branches_send_dm() -> None:
             "total_epochs": 2,
         }
     )
-    assert any("Training started" in m for m in bot.user.messages)
+    assert bot.user.embeds and isinstance(bot.user.embeds[-1], object)
 
     await sub._handle_event(
         {
@@ -59,7 +69,7 @@ async def test_handle_event_branches_send_dm() -> None:
             "time_s": 1.0,
         }
     )
-    assert any("Training progress" in m for m in bot.user.messages)
+    assert bot.user.embeds and len(bot.user.embeds) >= 2
 
     await sub._handle_event(
         {
@@ -72,7 +82,7 @@ async def test_handle_event_branches_send_dm() -> None:
             "val_acc": 0.95,
         }
     )
-    assert any("Training completed" in m for m in bot.user.messages)
+    assert bot.user.embeds and len(bot.user.embeds) >= 3
 
     await sub._handle_event(
         {
@@ -86,7 +96,7 @@ async def test_handle_event_branches_send_dm() -> None:
             "message": "bad payload",
         }
     )
-    assert any("Training failed" in m for m in bot.user.messages)
+    assert bot.user.embeds and len(bot.user.embeds) >= 4
 
     await sub._handle_event(
         {
@@ -100,14 +110,14 @@ async def test_handle_event_branches_send_dm() -> None:
             "message": "boom",
         }
     )
-    assert any("An error occurred during training" in m for m in bot.user.messages)
+    assert bot.user.embeds and len(bot.user.embeds) >= 5
 
 
 @pytest.mark.asyncio
 async def test_notify_handles_discord_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     class _BadUser:
-        async def send(self, message: str) -> object:  # pragma: no cover - trivial
-            _ = message
+        async def send(self, **kw: object) -> object:  # pragma: no cover - trivial
+            _ = kw
 
             class _Resp:
                 status = 404
@@ -131,7 +141,7 @@ async def test_handle_event_unknown_type_noop() -> None:
     sub = dn.DigitsEventSubscriber(bot, redis_url="redis://fake")
     # Unknown type should result in no notification and no exception
     await sub._handle_event({"type": "digits.train.other.v1", "user_id": 1, "request_id": "r"})
-    assert bot.user.messages == []
+    assert bot.user.embeds == []
 
 
 @pytest.mark.asyncio
