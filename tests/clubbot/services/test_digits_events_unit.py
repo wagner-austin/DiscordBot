@@ -77,6 +77,24 @@ def test_digits_events_encode_decode_roundtrip() -> None:
     assert evt4 is not None and evt4["type"] == "digits.train.failed.v1"
 
 
+def test_digits_events_decode_started_without_extras() -> None:
+    import json as _json
+
+    payload = _json.dumps(
+        {
+            "type": "digits.train.started.v1",
+            "request_id": "r",
+            "user_id": 1,
+            "model_id": "m",
+            "run_id": None,
+            "ts": "t",
+            "total_epochs": 5,
+        }
+    )
+    evt = try_decode_event(payload)
+    assert evt is not None and "cpu_cores" not in evt and "max_batch_size" not in evt
+
+
 def test_digits_events_decode_invalid_json_and_non_dict() -> None:
     assert try_decode_event("not json") is None
     assert try_decode_event("[]") is None

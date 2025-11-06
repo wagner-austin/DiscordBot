@@ -60,6 +60,20 @@ async def test_handle_event_branches_send_dm() -> None:
     )
     assert bot.user.embeds and isinstance(bot.user.embeds[-1], object)
 
+    # Start another request without extras to cover env_bits empty branch
+    await sub._handle_event(
+        {
+            "type": "digits.train.started.v1",
+            "request_id": "r2",
+            "user_id": 2,
+            "model_id": "m2",
+            "run_id": None,
+            "ts": "t",
+            "total_epochs": 1,
+        }
+    )
+    assert bot.user.embeds and len(bot.user.embeds) >= 2
+
     await sub._handle_event(
         {
             "type": "digits.train.epoch.v1",
