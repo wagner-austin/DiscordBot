@@ -21,6 +21,12 @@ class StartedV1(TypedDict):
     optimal_workers: NotRequired[int]
     max_batch_size: NotRequired[int]
     device: NotRequired[str]
+    batch_size: NotRequired[int]
+    augment: NotRequired[bool]
+    aug_rotate: NotRequired[float]
+    aug_translate: NotRequired[float]
+    noise_prob: NotRequired[float]
+    dots_prob: NotRequired[float]
 
 
 class EpochV1(TypedDict):
