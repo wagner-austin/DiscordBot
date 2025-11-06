@@ -28,7 +28,9 @@ def test_digits_events_encode_decode_roundtrip() -> None:
     evt = try_decode_event(s)
     assert evt is not None and evt["type"] == "digits.train.started.v1"
     assert DEFAULT_DIGITS_EVENTS_CHANNEL == "digits:events"
-    assert evt.get("cpu_cores") == 2 and evt.get("max_batch_size") == 64 and evt.get("device") == "cpu"
+    assert evt.get("cpu_cores") == 2
+    assert evt.get("max_batch_size") == 64
+    assert evt.get("device") == "cpu"
 
     progress = {
         "type": "digits.train.epoch.v1",
@@ -118,6 +120,13 @@ def test_digits_events_decode_completed_invalid_types() -> None:
 def test_digits_events_decode_unknown_type() -> None:
     unknown = {"type": "foo", "request_id": "r", "user_id": 1, "model_id": "m"}
     assert try_decode_event(encode_event(unknown)) is None
+
+
+def test_digits_events_decode_missing_type_or_nonstring() -> None:
+    import json as _json
+
+    assert try_decode_event(_json.dumps({})) is None
+    assert try_decode_event(_json.dumps({"type": 123})) is None
 
 
 def test_digits_events_decode_failed_invalid_types() -> None:

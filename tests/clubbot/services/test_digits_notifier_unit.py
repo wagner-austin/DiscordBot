@@ -50,6 +50,12 @@ async def test_handle_event_branches_send_dm() -> None:
             "run_id": None,
             "ts": "t",
             "total_epochs": 2,
+            # Optional extras for richer embed
+            "cpu_cores": 2,
+            "optimal_threads": 2,
+            "optimal_workers": 0,
+            "max_batch_size": 64,
+            "device": "cpu",
         }
     )
     assert bot.user.embeds and isinstance(bot.user.embeds[-1], object)
