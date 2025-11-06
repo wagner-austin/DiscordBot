@@ -14,8 +14,11 @@ from .digits_events import DEFAULT_DIGITS_EVENTS_CHANNEL, EventV1, try_decode_ev
 if TYPE_CHECKING:  # narrow async redis interface for typing
     from typing import Protocol
 
+    class _MessageProto(Protocol):  # pragma: no cover - typing only
+        async def edit(self, *args: object, **kwargs: object) -> object: ...
+
     class _UserProto(Protocol):  # pragma: no cover - typing only
-        async def send(self, *args: object, **kwargs: object) -> object: ...
+        async def send(self, *args: object, **kwargs: object) -> _MessageProto: ...
 
     class _BotProto(Protocol):  # pragma: no cover - typing only
         async def fetch_user(self, user_id: int) -> _UserProto: ...
@@ -63,6 +66,8 @@ class DigitsEventSubscriber:
     events_channel: str = DEFAULT_DIGITS_EVENTS_CHANNEL
     _task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _logger: logging.Logger = field(default_factory=_make_logger, init=False, repr=False)
+    # Track one DM message per training request for in-place updates
+    _messages: dict[str, object] = field(default_factory=dict, init=False, repr=False)
 
     def start(self) -> None:
         if self._task is not None:
@@ -141,44 +146,73 @@ class DigitsEventSubscriber:
     async def _on_started(
         self, *, user_id: int, request_id: str, model_id: str, total_epochs: int
     ) -> None:
-        msg = (
-            f"Training started for model '{model_id}' "
-            f"(req={request_id}, epochs={total_epochs})."
+        embed = discord.Embed(
+            title="🟦 Training Started",
+            description=(
+                f"Model: `{model_id}`\n"
+                f"Request: `{request_id}`\n"
+                f"Total epochs: `{total_epochs}`"
+            ),
+            color=0x3498DB,
         )
-        await self._notify(user_id, msg)
+        await self._notify(user_id, request_id, embed)
 
     async def _on_progress(
         self, *, user_id: int, request_id: str, epoch: int, total_epochs: int, val_acc: float | None
     ) -> None:
-        tail = f" val_acc={val_acc:.4f}" if isinstance(val_acc, float) else ""
-        msg = f"Training progress (req={request_id}): epoch {epoch}/{total_epochs}." + tail
-        await self._notify(user_id, msg)
+        # Simple text progress bar with 10 slots
+        filled = max(0, min(10, int((epoch / max(1, total_epochs)) * 10)))
+        bar = "█" * filled + "░" * (10 - filled)
+        tail = f"val_acc={val_acc:.4f}" if isinstance(val_acc, float) else ""
+        embed = discord.Embed(
+            title="🟨 Training Progress",
+            description=(
+                f"Epoch: `{epoch}/{total_epochs}`\n"
+                f"Progress: `{bar}`\n" + (f"{tail}\n" if tail else "") + f"Request: `{request_id}`"
+            ),
+            color=0xF39C12,
+        )
+        await self._notify(user_id, request_id, embed)
 
     async def _on_completed(
         self, *, user_id: int, request_id: str, model_id: str, run_id: str, val_acc: float
     ) -> None:
-        await self._notify(
-            user_id,
-            (
-                f"Training completed for model '{model_id}' (req={request_id}). "
-                f"best_val_acc={val_acc:.4f} run_id={run_id}"
+        embed = discord.Embed(
+            title="🟩 Training Completed",
+            description=(
+                f"Model: `{model_id}`\n"
+                f"Best val acc: `{val_acc:.4f}`\n"
+                f"Run id: `{run_id}`\n"
+                f"Request: `{request_id}`"
             ),
+            color=0x2ECC71,
         )
+        await self._notify(user_id, request_id, embed)
 
     async def _on_failed(
         self, *, user_id: int, request_id: str, model_id: str, error_kind: str, message: str
     ) -> None:
         if error_kind == "user":
-            await self._notify(user_id, f"Training failed: {message} (req={request_id}).")
-            return
-        await self._notify(
-            user_id,
-            (f"An error occurred during training (req={request_id}). " f"Please try again later."),
+            text = f"Training failed: {message}"
+        else:
+            text = "An error occurred during training. Please try again later."
+        embed = discord.Embed(
+            title="🟥 Training Failed",
+            description=f"{text}\nRequest: `{request_id}`\nModel: `{model_id}`",
+            color=0xE74C3C,
         )
+        await self._notify(user_id, request_id, embed)
 
-    async def _notify(self, user_id: int, message: str) -> None:
+    async def _notify(self, user_id: int, request_id: str, embed: discord.Embed) -> None:
         try:
             user = await self.bot.fetch_user(user_id)
-            await user.send(message)
+            existing = self._messages.get(request_id)
+            if existing is not None and hasattr(existing, "edit"):
+                # Edit in place
+                await existing.edit(embed=embed)
+                return
+            # Otherwise, send a new DM and store it for future updates
+            msg = await user.send(embed=embed)
+            self._messages[request_id] = msg
         except (discord.HTTPException, discord.Forbidden, discord.NotFound):
             self._logger.debug("Failed to DM user=%s", user_id)
