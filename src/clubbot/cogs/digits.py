@@ -159,9 +159,22 @@ class DigitsCog(BaseCog):
             await self.handle_exception(interaction, log, exc)
             return
 
+        # Rich embed for queued training acknowledgment
+        desc = "\n".join(
+            [
+                f"Model: `{model_id}`",
+                f"Request: `{request_id}`",
+                f"Job: `{job_id}`",
+                f"Epochs: `{epochs}`",
+                f"Batch size: `{batch_size}`",
+                f"LR: `{lr}`",
+                f"Augment: `{augment}`",
+                "You will receive DMs with progress and final result.",
+            ]
+        )
+        embed = discord.Embed(title="🟪 Queued Training", description=desc, color=0x95A5A6)
         await interaction.followup.send(
-            (f"Queued training for '{model_id}'. " f"Request: {request_id}. Job: {job_id}."),
-            ephemeral=not self.config.DIGITS_PUBLIC_RESPONSES,
+            embed=embed, ephemeral=not self.config.DIGITS_PUBLIC_RESPONSES
         )
         log.info("Queued training req=%s job=%s", request_id, job_id)
 
