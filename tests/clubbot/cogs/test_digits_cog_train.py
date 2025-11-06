@@ -42,9 +42,12 @@ class FakeFollowup:
         content: str = "",
         *,
         file: discord.File | None = None,
+        embed: object | None = None,
         ephemeral: bool = False,
     ) -> None:
-        self._parent.calls.append({"message": content, "file": file, "ephemeral": ephemeral})
+        self._parent.calls.append(
+            {"message": content, "file": file, "embed": embed, "ephemeral": ephemeral}
+        )
 
 
 class FakeInteraction:
@@ -135,7 +138,8 @@ async def test_train_enqueues_and_acknowledges() -> None:
     # Verify enqueued with expected defaults and got a confirmation message
     assert enq.calls and isinstance(enq.calls[-1], dict)
     last = inter.calls[-1]
-    assert "Queued training" in str(last["message"]) and last["ephemeral"] is True
+    # Expect an embed-based confirmation with ephemeral delivery
+    assert last.get("embed") is not None and last["ephemeral"] is True
 
 
 @pytest.mark.asyncio
