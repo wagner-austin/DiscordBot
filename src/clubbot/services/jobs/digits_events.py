@@ -91,6 +91,48 @@ def try_decode_event(payload: str) -> EventV1 | None:
     return None
 
 
+def _attach_optional_context(out_st: StartedV1, src: dict[str, object]) -> None:
+    cpu = src.get("cpu_cores")
+    if isinstance(cpu, int):
+        out_st["cpu_cores"] = cpu
+    thr = src.get("optimal_threads")
+    if isinstance(thr, int):
+        out_st["optimal_threads"] = thr
+    mem = src.get("memory_mb")
+    if isinstance(mem, int):
+        out_st["memory_mb"] = mem
+    w = src.get("optimal_workers")
+    if isinstance(w, int):
+        out_st["optimal_workers"] = w
+    mbs = src.get("max_batch_size")
+    if isinstance(mbs, int):
+        out_st["max_batch_size"] = mbs
+    dev = src.get("device")
+    if isinstance(dev, str):
+        out_st["device"] = dev
+
+
+def _attach_optional_augment(out_st: StartedV1, src: dict[str, object]) -> None:
+    bs = src.get("batch_size")
+    if isinstance(bs, int):
+        out_st["batch_size"] = bs
+    aug = src.get("augment")
+    if isinstance(aug, bool):
+        out_st["augment"] = aug
+    ar = src.get("aug_rotate")
+    if isinstance(ar, int | float):
+        out_st["aug_rotate"] = float(ar)
+    at = src.get("aug_translate")
+    if isinstance(at, int | float):
+        out_st["aug_translate"] = float(at)
+    npv = src.get("noise_prob")
+    if isinstance(npv, int | float):
+        out_st["noise_prob"] = float(npv)
+    dpv = src.get("dots_prob")
+    if isinstance(dpv, int | float):
+        out_st["dots_prob"] = float(dpv)
+
+
 def _decode_started(obj: dict[str, object]) -> StartedV1 | None:
     req = obj.get("request_id")
     uid = obj.get("user_id")
@@ -115,24 +157,8 @@ def _decode_started(obj: dict[str, object]) -> StartedV1 | None:
             "ts": ts,
             "total_epochs": tot,
         }
-        cpu = obj.get("cpu_cores")
-        if isinstance(cpu, int):
-            out_st["cpu_cores"] = cpu
-        thr = obj.get("optimal_threads")
-        if isinstance(thr, int):
-            out_st["optimal_threads"] = thr
-        mem = obj.get("memory_mb")
-        if isinstance(mem, int):
-            out_st["memory_mb"] = mem
-        w = obj.get("optimal_workers")
-        if isinstance(w, int):
-            out_st["optimal_workers"] = w
-        bs = obj.get("max_batch_size")
-        if isinstance(bs, int):
-            out_st["max_batch_size"] = bs
-        dev = obj.get("device")
-        if isinstance(dev, str):
-            out_st["device"] = dev
+        _attach_optional_context(out_st, obj)
+        _attach_optional_augment(out_st, obj)
         return out_st
     return None
 
