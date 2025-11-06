@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from typing import Final, Literal, NotRequired, TypedDict
@@ -115,6 +115,9 @@ def _decode_started(obj: dict[str, object]) -> StartedV1 | None:
         thr = obj.get("optimal_threads")
         if isinstance(thr, int):
             out_st["optimal_threads"] = thr
+        mem = obj.get("memory_mb")
+        if isinstance(mem, int):
+            out_st["memory_mb"] = mem
         w = obj.get("optimal_workers")
         if isinstance(w, int):
             out_st["optimal_workers"] = w
@@ -228,5 +231,3 @@ def _parse_json_obj(payload: str) -> dict[str, object] | None:
         if isinstance(k, str):
             out[k] = v
     return out
-
-
