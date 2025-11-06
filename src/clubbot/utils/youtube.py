@@ -56,14 +56,16 @@ def extract_video_id(url: str) -> str:
             parts = path.split("/")
             if len(parts) >= 2 and parts[0] in {"shorts", "live"}:
                 vid = parts[1]
-    elif host in {"youtu.be", "www.youtu.be"}:
+    else:
+        # youtu.be variants
         parts = path.split("/")
         if parts and parts[0]:
             vid = parts[0]
 
-    if not vid or not _VIDEO_ID_RE.match(vid):
+    is_valid = isinstance(vid, str) and bool(_VIDEO_ID_RE.match(vid))
+    if not is_valid:
         raise UserInputError("Could not extract a valid YouTube video id")
-    return vid
+    return str(vid)
 
 
 def canonicalize_youtube_url(url: str) -> str:
