@@ -313,15 +313,38 @@ class DigitsEventSubscriber:
     async def _on_failed(
         self, *, user_id: int, request_id: str, model_id: str, error_kind: str, message: str
     ) -> None:
-        if error_kind == "user":
-            text = f"Training failed: {message}"
-        else:
-            text = "An error occurred during training. Please try again later."
         embed = discord.Embed(
-            title="🟥 Training Failed",
-            description=f"{text}\nRequest: `{request_id}`\nModel: `{model_id}`",
-            color=0xE74C3C,
+            title="❌ Training Failed",
+            description=f"Training failed for **{model_id}**",
+            color=0xED4245,  # Red
         )
+
+        # Error details
+        if error_kind == "user":
+            embed.add_field(
+                name="⚠️ Issue",
+                value=f"```{message}```",
+                inline=False,
+            )
+            embed.add_field(
+                name="💡 Next Steps",
+                value="Please check your configuration and try again.",
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="⚠️ System Error",
+                value="An unexpected error occurred during training.",
+                inline=False,
+            )
+            embed.add_field(
+                name="💡 Next Steps",
+                value="Please try again later. If the issue persists, contact support.",
+                inline=False,
+            )
+
+        embed.add_field(name="🔖 Model ID", value=f"`{model_id}`", inline=True)
+        embed.set_footer(text=f"Request ID: {request_id}")
         await self._notify(user_id, request_id, embed)
 
     async def _notify(self, user_id: int, request_id: str, embed: discord.Embed) -> None:
