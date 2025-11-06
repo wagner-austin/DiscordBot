@@ -53,6 +53,7 @@ async def test_handle_event_branches_send_dm() -> None:
             # Optional extras for richer embed
             "cpu_cores": 2,
             "optimal_threads": 2,
+            "memory_mb": 953,
             "optimal_workers": 0,
             "max_batch_size": 64,
             "device": "cpu",
