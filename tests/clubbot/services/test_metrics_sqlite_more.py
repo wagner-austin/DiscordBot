@@ -36,3 +36,50 @@ def test_sqlite_metrics_creates_directory_and_close(tmp_path: Path) -> None:
     assert totals["total_attempts"] >= 1
     # Close covers the contextlib.suppress branch
     m.close()
+
+
+def test_outcome_breakdown_internal_error_default_window(tmp_path: Path) -> None:
+    db = tmp_path / "metrics.sqlite"
+    m = SQLiteMetricsService(sqlite_path=str(db), redact_query=True)
+
+    opts = QRGenerationOptions(
+        ecc="M", box_size=10, border=2, fill_color="#000000", back_color="#FFFFFF"
+    )
+    # Log one internal_error and confirm outcome table picks it up without a time window
+    m.log_qr_event(
+        outcome="internal_error",
+        ts=None,
+        user_id=1,
+        guild_id=None,
+        input_url="https://err",
+        normalized_url=None,
+        options=opts,
+        public=False,
+        error_type="exception",
+        error_message="boom",
+    )
+    br = m.outcome_breakdown(window_seconds=None)
+    assert br["internal_error"] >= 1
+
+
+def test_outcome_breakdown_ignores_unknown_outcomes(tmp_path: Path) -> None:
+    db = tmp_path / "metrics.sqlite"
+    m = SQLiteMetricsService(sqlite_path=str(db), redact_query=True)
+
+    opts = QRGenerationOptions(
+        ecc="M", box_size=10, border=2, fill_color="#000000", back_color="#FFFFFF"
+    )
+
+    # Insert an unknown outcome to exercise non-mapped branch
+    m.log_qr_event(
+        outcome="custom",
+        ts=None,
+        user_id=1,
+        guild_id=None,
+        input_url="https://x",
+        normalized_url=None,
+        options=opts,
+        public=True,
+    )
+    br = m.outcome_breakdown(window_seconds=None)
+    assert br == {"success": 0, "validation_fail": 0, "rate_limited": 0, "internal_error": 0}
