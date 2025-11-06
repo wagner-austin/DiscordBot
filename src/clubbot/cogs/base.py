@@ -54,14 +54,15 @@ class BaseCog(commands.Cog):
         message: str,
     ) -> None:
         log.debug("User error: %s", message)
+        content = message
         try:
             if interaction.response.is_done():
-                await interaction.followup.send(message, ephemeral=True)
+                await interaction.followup.send(content, ephemeral=True)
             else:
-                await interaction.response.send_message(message, ephemeral=True)
+                await interaction.response.send_message(content, ephemeral=True)
         except Exception:
             with contextlib.suppress(Exception):
-                await interaction.followup.send(message, ephemeral=True)
+                await interaction.followup.send(content, ephemeral=True)
 
     async def handle_exception(
         self,
@@ -75,16 +76,15 @@ class BaseCog(commands.Cog):
         extra = getattr(log, "extra", {})
         if isinstance(extra, dict):
             req_id = extra.get("request_id")
-        suffix = f" (req={req_id})" if req_id else ""
+
+        base_msg = "An error occurred. Please try again later."
+        content = base_msg + (f" (req={req_id})" if req_id else "")
+
         with contextlib.suppress(Exception):
             if interaction.response.is_done():
-                await interaction.followup.send(
-                    f"An error occurred{suffix}. Please try again later.", ephemeral=True
-                )
+                await interaction.followup.send(content, ephemeral=True)
             else:
-                await interaction.response.send_message(
-                    f"An error occurred{suffix}. Please try again later.", ephemeral=True
-                )
+                await interaction.response.send_message(content, ephemeral=True)
 
     async def notify_user(self, user_id: int, message: str) -> None:
         try:
