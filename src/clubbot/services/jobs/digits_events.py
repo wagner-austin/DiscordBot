@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import Final, Literal, NotRequired, TypedDict
@@ -17,6 +17,7 @@ class StartedV1(TypedDict):
     # Optional rich context (if provided by producer)
     cpu_cores: NotRequired[int]
     optimal_threads: NotRequired[int]
+    memory_mb: NotRequired[int]
     optimal_workers: NotRequired[int]
     max_batch_size: NotRequired[int]
     device: NotRequired[str]
@@ -227,3 +228,5 @@ def _parse_json_obj(payload: str) -> dict[str, object] | None:
         if isinstance(k, str):
             out[k] = v
     return out
+
+
