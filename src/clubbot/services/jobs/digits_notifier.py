@@ -109,6 +109,14 @@ class DigitsEventSubscriber:
 
     async def _handle_event(self, event: Event) -> None:
         if event["type"] == "digits.train.started.v1":
+            # Narrow optional config types for mypy via local binding + isinstance guards
+            _bs = event.get("batch_size")
+            _aug = event.get("augment")
+            _ar = event.get("aug_rotate")
+            _at = event.get("aug_translate")
+            _np = event.get("noise_prob")
+            _dp = event.get("dots_prob")
+
             await self._on_started(
                 user_id=event["user_id"],
                 request_id=event["request_id"],
@@ -136,6 +144,12 @@ class DigitsEventSubscriber:
                     else None
                 ),
                 device=(event.get("device") if isinstance(event.get("device"), str) else None),
+                batch_size=(_bs if isinstance(_bs, int) else None),
+                augment=(_aug if isinstance(_aug, bool) else None),
+                aug_rotate=(float(_ar) if isinstance(_ar, int | float) else None),
+                aug_translate=(float(_at) if isinstance(_at, int | float) else None),
+                noise_prob=(float(_np) if isinstance(_np, int | float) else None),
+                dots_prob=(float(_dp) if isinstance(_dp, int | float) else None),
             )
             return
         if event["type"] == "digits.train.epoch.v1":
@@ -144,7 +158,9 @@ class DigitsEventSubscriber:
                 request_id=event["request_id"],
                 epoch=event["epoch"],
                 total_epochs=event["total_epochs"],
-                val_acc=event["val_acc"],
+                val_acc=event.get("val_acc"),
+                train_loss=event.get("train_loss"),
+                time_s=event.get("time_s"),
             )
             return
         if event["type"] == "digits.train.completed.v1":
@@ -165,7 +181,7 @@ class DigitsEventSubscriber:
                 message=event["message"],
             )
 
-    async def _on_started(
+    async def _on_started(  # noqa: C901
         self,
         *,
         user_id: int,
@@ -178,64 +194,120 @@ class DigitsEventSubscriber:
         optimal_workers: int | None = None,
         max_batch_size: int | None = None,
         device: str | None = None,
+        batch_size: int | None = None,
+        augment: bool | None = None,
+        aug_rotate: float | None = None,
+        aug_translate: float | None = None,
+        noise_prob: float | None = None,
+        dots_prob: float | None = None,
     ) -> None:
-        desc_lines = [
-            f"Model: `{model_id}`",
-            f"Request: `{request_id}`",
-            f"Total epochs: `{total_epochs}`",
-        ]
-        env_bits: list[str] = []
-        if isinstance(cpu_cores, int):
-            env_bits.append(f"cpu_cores={cpu_cores}")
-        if isinstance(optimal_threads, int):
-            env_bits.append(f"optimal_threads={optimal_threads}")
-        if isinstance(memory_mb, int):
-            env_bits.append(f"memory_mb={memory_mb}")
-        if isinstance(optimal_workers, int):
-            env_bits.append(f"optimal_workers={optimal_workers}")
-        if isinstance(max_batch_size, int):
-            env_bits.append(f"max_batch_size={max_batch_size}")
-        if isinstance(device, str) and device:
-            env_bits.append(f"device={device}")
-        if env_bits:
-            desc_lines.append("`" + " ".join(env_bits) + "`")
+        # Create a beautiful embed with fields
         embed = discord.Embed(
-            title="🟦 Training Started",
-            description="\n".join(desc_lines),
-            color=0x3498DB,
+            title="🚀 Training Started",
+            description=f"Training session initiated for **{model_id}**",
+            color=0x5865F2,  # Blurple
         )
+
+        # Training Configuration
+        config_lines = [f"**Epochs:** `{total_epochs}`"]
+        if isinstance(batch_size, int):
+            config_lines.append(f"**Batch Size:** `{batch_size}`")
+        if isinstance(device, str) and device:
+            config_lines.append(f"**Device:** `{device}`")
+        embed.add_field(name="⚙️ Configuration", value="\n".join(config_lines), inline=True)
+
+        # Resource Allocation
+        resource_lines = []
+        if isinstance(cpu_cores, int):
+            resource_lines.append(f"**CPU Cores:** `{cpu_cores}`")
+        if isinstance(memory_mb, int):
+            resource_lines.append(f"**Memory:** `{memory_mb} MB`")
+        if isinstance(optimal_threads, int):
+            resource_lines.append(f"**Threads:** `{optimal_threads}`")
+        if isinstance(optimal_workers, int):
+            resource_lines.append(f"**Workers:** `{optimal_workers}`")
+        if resource_lines:
+            embed.add_field(name="💻 Resources", value="\n".join(resource_lines), inline=True)
+
+        # Augmentations
+        if augment:
+            aug_lines = []
+            if isinstance(aug_rotate, float) and aug_rotate > 0:
+                aug_lines.append(f"🔄 Rotation: `±{aug_rotate}°`")
+            if isinstance(aug_translate, float) and aug_translate > 0:
+                aug_lines.append(f"↔️ Translation: `±{aug_translate * 100:.0f}%`")
+            if isinstance(noise_prob, float) and noise_prob > 0:
+                aug_lines.append(f"⚡ Noise: `{noise_prob * 100:.0f}%`")
+            if isinstance(dots_prob, float) and dots_prob > 0:
+                aug_lines.append(f"🔴 Dots: `{dots_prob * 100:.0f}%`")
+            if aug_lines:
+                embed.add_field(name="✨ Augmentations", value="\n".join(aug_lines), inline=False)
+        else:
+            embed.add_field(name="✨ Augmentations", value="*None*", inline=False)
+
+        embed.set_footer(text=f"Request ID: {request_id}")
         await self._notify(user_id, request_id, embed)
 
     async def _on_progress(
-        self, *, user_id: int, request_id: str, epoch: int, total_epochs: int, val_acc: float | None
+        self,
+        *,
+        user_id: int,
+        request_id: str,
+        epoch: int,
+        total_epochs: int,
+        val_acc: float | None,
+        train_loss: float | None = None,
+        time_s: float | None = None,
     ) -> None:
-        # Simple text progress bar with 10 slots
-        filled = max(0, min(10, int((epoch / max(1, total_epochs)) * 10)))
-        bar = "█" * filled + "░" * (10 - filled)
-        tail = f"val_acc={val_acc:.4f}" if isinstance(val_acc, float) else ""
+        # Beautiful progress bar with 20 slots for smoother visualization
+        progress_pct = (epoch / max(1, total_epochs)) * 100
+        filled = max(0, min(20, int((epoch / max(1, total_epochs)) * 20)))
+        bar = "█" * filled + "░" * (20 - filled)
+
         embed = discord.Embed(
-            title="🟨 Training Progress",
-            description=(
-                f"Epoch: `{epoch}/{total_epochs}`\n"
-                f"Progress: `{bar}`\n" + (f"{tail}\n" if tail else "") + f"Request: `{request_id}`"
-            ),
-            color=0xF39C12,
+            title="⚡ Training Progress",
+            description=f"**Epoch {epoch} of {total_epochs}** ({progress_pct:.1f}%)\n`{bar}`",
+            color=0xFEE75C,  # Yellow
         )
+
+        # Metrics
+        metrics_lines = []
+        if isinstance(val_acc, float):
+            metrics_lines.append(f"**Validation Accuracy:** `{val_acc:.2%}`")
+        if isinstance(train_loss, float):
+            metrics_lines.append(f"**Training Loss:** `{train_loss:.4f}`")
+        if metrics_lines:
+            embed.add_field(name="📊 Metrics", value="\n".join(metrics_lines), inline=True)
+
+        # Timing
+        if isinstance(time_s, float):
+            mins = int(time_s // 60)
+            secs = int(time_s % 60)
+            time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+            embed.add_field(name="⏱️ Epoch Time", value=f"`{time_str}`", inline=True)
+
+        embed.set_footer(text=f"Request ID: {request_id}")
         await self._notify(user_id, request_id, embed)
 
     async def _on_completed(
         self, *, user_id: int, request_id: str, model_id: str, run_id: str, val_acc: float
     ) -> None:
         embed = discord.Embed(
-            title="🟩 Training Completed",
-            description=(
-                f"Model: `{model_id}`\n"
-                f"Best val acc: `{val_acc:.4f}`\n"
-                f"Run id: `{run_id}`\n"
-                f"Request: `{request_id}`"
-            ),
-            color=0x2ECC71,
+            title="✅ Training Completed Successfully!",
+            description=f"Training finished for **{model_id}**",
+            color=0x57F287,  # Green
         )
+
+        embed.add_field(
+            name="🎯 Final Performance",
+            value=f"**Best Validation Accuracy:** `{val_acc:.2%}`",
+            inline=False,
+        )
+
+        embed.add_field(name="🔖 Model ID", value=f"`{model_id}`", inline=True)
+        embed.add_field(name="🕐 Run ID", value=f"`{run_id}`", inline=True)
+
+        embed.set_footer(text=f"Request ID: {request_id}")
         await self._notify(user_id, request_id, embed)
 
     async def _on_failed(
