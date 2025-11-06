@@ -122,6 +122,9 @@ class DigitsEventSubscriber:
                     if isinstance(event.get("optimal_threads"), int)
                     else None
                 ),
+                memory_mb=(
+                    event.get("memory_mb") if isinstance(event.get("memory_mb"), int) else None
+                ),
                 optimal_workers=(
                     event.get("optimal_workers")
                     if isinstance(event.get("optimal_workers"), int)
@@ -171,6 +174,7 @@ class DigitsEventSubscriber:
         total_epochs: int,
         cpu_cores: int | None = None,
         optimal_threads: int | None = None,
+        memory_mb: int | None = None,
         optimal_workers: int | None = None,
         max_batch_size: int | None = None,
         device: str | None = None,
@@ -185,6 +189,8 @@ class DigitsEventSubscriber:
             env_bits.append(f"cpu_cores={cpu_cores}")
         if isinstance(optimal_threads, int):
             env_bits.append(f"optimal_threads={optimal_threads}")
+        if isinstance(memory_mb, int):
+            env_bits.append(f"memory_mb={memory_mb}")
         if isinstance(optimal_workers, int):
             env_bits.append(f"optimal_workers={optimal_workers}")
         if isinstance(max_batch_size, int):
