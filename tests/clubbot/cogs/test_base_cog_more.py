@@ -94,6 +94,44 @@ async def test_handle_exception_includes_req_and_branches() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_exception_ignores_nondict_extra() -> None:
+    # Ensure branch where logger.extra is not a dict is covered
+    cog = BaseCog()
+
+    class _Log:
+        def __init__(self) -> None:
+            self.extra = "nondict"
+
+        def exception(self, *args: object, **kwargs: object) -> None:  # pragma: no cover - trivial
+            return None
+
+    class _Resp:
+        def is_done(self) -> bool:
+            return True
+
+    class _Follow:
+        def __init__(self) -> None:
+            self.sent: list[tuple[str, dict[str, object]]] = []
+
+        async def send(self, content: str, **kw: object) -> None:
+            self.sent.append((content, kw))
+
+    class _Interaction:
+        def __init__(self) -> None:
+            self.response = _Resp()
+            self.followup = _Follow()
+
+    inter = _Interaction()
+
+    async def _call() -> None:
+        await cog.handle_exception(inter, _Log(), RuntimeError("x"))
+
+    await _call()
+    # Message should not include req= suffix since extra is non-dict
+    assert inter.followup.sent and "req=" not in inter.followup.sent[0][0]
+
+
+@pytest.mark.asyncio
 async def test_dm_file_and_notify_user_bot_none_and_failure_paths() -> None:
     cog = BaseCog()
     # bot is None path
