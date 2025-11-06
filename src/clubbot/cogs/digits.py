@@ -136,7 +136,7 @@ class DigitsCog(BaseCog):
 
         # Default training parameters (no options for now)
         model_id = "mnist_resnet18_v1"
-        epochs = 1
+        epochs = 15
         batch_size = 256
         lr = 0.0015
         seed = 42
@@ -160,19 +160,39 @@ class DigitsCog(BaseCog):
             return
 
         # Rich embed for queued training acknowledgment
-        desc = "\n".join(
-            [
-                f"Model: `{model_id}`",
-                f"Request: `{request_id}`",
-                f"Job: `{job_id}`",
-                f"Epochs: `{epochs}`",
-                f"Batch size: `{batch_size}`",
-                f"LR: `{lr}`",
-                f"Augment: `{augment}`",
-                "You will receive DMs with progress and final result.",
-            ]
+        embed = discord.Embed(
+            title="📋 Training Job Queued",
+            description=(
+                "Your training job has been queued successfully!\n"
+                "You'll receive **DM updates** with progress and results."
+            ),
+            color=0x5865F2,  # Blurple
         )
-        embed = discord.Embed(title="🟪 Queued Training", description=desc, color=0x95A5A6)
+
+        # Job Details
+        embed.add_field(
+            name="📦 Job Info",
+            value=f"**Model:** `{model_id}`\n**Job ID:** `{job_id}`",
+            inline=True,
+        )
+
+        # Training Config
+        embed.add_field(
+            name="⚙️ Configuration",
+            value=(
+                f"**Epochs:** `{epochs}`\n"
+                f"**Batch Size:** `{batch_size}`\n"
+                f"**Learning Rate:** `{lr}`"
+            ),
+            inline=True,
+        )
+
+        # Augmentations
+        aug_status = "✅ Enabled" if augment else "❌ Disabled"
+        embed.add_field(name="✨ Augmentations", value=aug_status, inline=False)
+
+        embed.set_footer(text=f"Request ID: {request_id}")
+
         await interaction.followup.send(
             embed=embed, ephemeral=not self.config.DIGITS_PUBLIC_RESPONSES
         )
