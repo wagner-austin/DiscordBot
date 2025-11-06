@@ -99,6 +99,7 @@ ignore_missing_imports = true
 [tool.coverage.run]
 source = ["src"]
 omit = ["tests/*"]
+branch = true
 
 [tool.coverage.report]
 precision = 2
