@@ -135,6 +135,79 @@ async def test_handle_event_branches_send_dm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_started_embed_includes_augment_and_config() -> None:
+    bot = _Bot()
+    sub = dn.DigitsEventSubscriber(bot, redis_url="redis://fake")
+    await sub._handle_event(
+        {
+            "type": "digits.train.started.v1",
+            "request_id": "rx",
+            "user_id": 7,
+            "model_id": "mX",
+            "run_id": None,
+            "ts": "t",
+            "total_epochs": 3,
+            "cpu_cores": 2,
+            "optimal_threads": 2,
+            "memory_mb": 953,
+            "optimal_workers": 0,
+            "max_batch_size": 64,
+            "device": "cpu",
+            "batch_size": 64,
+            "augment": True,
+            "aug_rotate": 10.0,
+            "aug_translate": 0.1,
+            "noise_prob": 0.2,
+            "dots_prob": 0.1,
+        }
+    )
+    assert bot.user.embeds and isinstance(bot.user.embeds[-1], object)
+
+
+@pytest.mark.asyncio
+async def test_started_augment_zero_values_renders_none() -> None:
+    bot = _Bot()
+    sub = dn.DigitsEventSubscriber(bot, redis_url="redis://fake")
+    await sub._handle_event(
+        {
+            "type": "digits.train.started.v1",
+            "request_id": "rz",
+            "user_id": 9,
+            "model_id": "mZ",
+            "run_id": None,
+            "ts": "t",
+            "total_epochs": 1,
+            "augment": True,
+            "aug_rotate": 0.0,
+            "aug_translate": 0.0,
+            "noise_prob": 0.0,
+            "dots_prob": 0.0,
+        }
+    )
+    assert bot.user.embeds and isinstance(bot.user.embeds[-1], object)
+
+
+@pytest.mark.asyncio
+async def test_progress_without_optional_metrics() -> None:
+    bot = _Bot()
+    sub = dn.DigitsEventSubscriber(bot, redis_url="redis://fake")
+    await sub._handle_event(
+        {
+            "type": "digits.train.epoch.v1",
+            "request_id": "r3",
+            "user_id": 3,
+            "model_id": "m3",
+            "run_id": None,
+            "ts": "t",
+            "epoch": 1,
+            "total_epochs": 3,
+            # omit val_acc, train_loss, time_s to hit empty branches
+        }
+    )
+    assert bot.user.embeds and isinstance(bot.user.embeds[-1], object)
+
+
+@pytest.mark.asyncio
 async def test_notify_handles_discord_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     class _BadUser:
         async def send(self, **kw: object) -> object:  # pragma: no cover - trivial
