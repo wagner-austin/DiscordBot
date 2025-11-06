@@ -20,6 +20,7 @@ def test_digits_events_encode_decode_roundtrip() -> None:
         # Optional extras should round-trip when present
         "cpu_cores": 2,
         "optimal_threads": 2,
+        "memory_mb": 953,
         "optimal_workers": 0,
         "max_batch_size": 64,
         "device": "cpu",
@@ -29,6 +30,7 @@ def test_digits_events_encode_decode_roundtrip() -> None:
     assert evt is not None and evt["type"] == "digits.train.started.v1"
     assert DEFAULT_DIGITS_EVENTS_CHANNEL == "digits:events"
     assert evt.get("cpu_cores") == 2
+    assert evt.get("memory_mb") == 953
     assert evt.get("max_batch_size") == 64
     assert evt.get("device") == "cpu"
 
