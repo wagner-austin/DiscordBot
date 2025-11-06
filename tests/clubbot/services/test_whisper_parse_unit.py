@@ -34,6 +34,18 @@ def test_to_verbose_dict_method_raises_and_is_ignored() -> None:
     assert d == {"text": "", "segments": []}
 
 
+def test_to_verbose_dict_non_dict_then_next_method() -> None:
+    class _Obj:
+        def to_dict(self) -> object:
+            return [1, 2, 3]  # not a dict -> ignored
+
+        def model_dump(self) -> dict[str, object]:
+            return {"text": "t", "segments": []}
+
+    d = wmod.to_verbose_dict(_Obj())
+    assert d.get("text") == "t"
+
+
 def test_convert_verbose_to_segments_strips_and_parses_numbers() -> None:
     payload = {
         "segments": [
@@ -44,6 +56,11 @@ def test_convert_verbose_to_segments_strips_and_parses_numbers() -> None:
     }
     out = wmod.convert_verbose_to_segments(payload)
     assert len(out) == 1 and out[0].text == "hello" and out[0].duration == 1.5
+
+
+def test_convert_verbose_to_segments_non_list_returns_empty() -> None:
+    out = wmod.convert_verbose_to_segments({"segments": {"a": 1}})
+    assert out == []
 
 
 def test_as_float_edges() -> None:
