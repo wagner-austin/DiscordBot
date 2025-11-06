@@ -162,20 +162,16 @@ class BotOrchestrator:
                 "DISCORD_TOKEN should be the raw token string, without the 'Bot ' prefix."
             )
         app_id = os.getenv("DISCORD_APPLICATION_ID")
-        if app_id:
-            try:
-                first = token.split(".")[0]
-                padding = "=" * (-len(first) % 4)
-                decoded = base64.b64decode(first + padding).decode("utf-8", errors="strict")
-                if decoded != app_id:
-                    raise RuntimeError(
-                        "DISCORD_TOKEN appears to belong to a different application ID. "
-                        "Verify you copied the Bot Token from the same application as "
-                        "DISCORD_APPLICATION_ID."
-                    )
-            except Exception as exc:
-                # Non-fatal; the library will still validate. Keep as debug detail.
-                self.logger.debug("Could not verify token against application id: %s", exc)
+        try:
+            if app_id and not self._token_matches_app_id(token, app_id):
+                raise RuntimeError(
+                    "DISCORD_TOKEN appears to belong to a different application ID. "
+                    "Verify you copied the Bot Token from the same application as "
+                    "DISCORD_APPLICATION_ID."
+                )
+        except Exception as exc:
+            # Non-fatal; the library will still validate. Keep as debug detail.
+            self.logger.debug("Could not verify token against application id: %s", exc)
 
     def run(self) -> None:
         # Build
@@ -184,3 +180,10 @@ class BotOrchestrator:
         # Validate and run
         self._preflight_token_check()
         bot.run(self.container.cfg.DISCORD_TOKEN)
+
+    # Internal helpers
+    def _token_matches_app_id(self, token: str, app_id: str) -> bool:
+        first = token.split(".")[0]
+        padding = "=" * (-len(first) % 4)
+        decoded = base64.b64decode(first + padding).decode("utf-8", errors="strict")
+        return decoded == app_id
