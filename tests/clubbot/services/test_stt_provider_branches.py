@@ -49,3 +49,37 @@ def test_estimate_skips_nondict_and_no_audio_formats(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(prov, "_probe", lambda url: info)
     dur, approx_mb = prov.estimate("https://x")
     assert dur == 120 and approx_mb >= 0.0
+
+
+def test_estimate_fallback_abr_without_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = {
+        "duration": "60",
+        "formats": [
+            {"vcodec": "none", "acodec": "opus", "abr": "96"},  # audio-only w/o explicit size
+        ],
+    }
+    prov = _provider(enable_chunking=False)
+    monkeypatch.setattr(prov, "_probe", lambda url: info)
+    dur, approx_mb = prov.estimate("https://x")
+    assert dur == 60 and approx_mb > 0.0
+
+
+def test_estimate_fallback_with_higher_abr(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = {
+        "duration": 120,
+        "formats": [
+            {"vcodec": "none", "acodec": "mp4a.40.2", "abr": 192},
+        ],
+    }
+    prov = _provider(enable_chunking=False)
+    monkeypatch.setattr(prov, "_probe", lambda url: info)
+    dur, approx_mb = prov.estimate("https://x")
+    assert dur == 120 and approx_mb > 0.0
+
+
+def test_estimate_formats_not_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = {"duration": 60, "formats": {"k": "v"}}
+    prov = _provider(enable_chunking=False)
+    monkeypatch.setattr(prov, "_probe", lambda url: info)
+    dur, approx_mb = prov.estimate("https://x")
+    assert dur == 60 and approx_mb == 0.0
