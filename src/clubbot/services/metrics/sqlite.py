@@ -180,20 +180,20 @@ class SQLiteMetricsService(MetricsService):
             f"SELECT outcome, COUNT(*) FROM qr_events{where} GROUP BY outcome",
             args,
         ).fetchall()
-        out: OutcomeBreakdown = {
+        # Aggregate into a plain dict to minimize per-key branching, then materialize
+        counts: dict[str, int] = {
             "success": 0,
             "validation_fail": 0,
             "rate_limited": 0,
             "internal_error": 0,
         }
         for name, count in rows:
-            c = int(count)
-            if name == "success":
-                out["success"] = c
-            elif name == "validation_fail":
-                out["validation_fail"] = c
-            elif name == "rate_limited":
-                out["rate_limited"] = c
-            elif name == "internal_error":
-                out["internal_error"] = c
-        return out
+            key = str(name)
+            if key in counts:
+                counts[key] = int(count)
+        return {
+            "success": counts["success"],
+            "validation_fail": counts["validation_fail"],
+            "rate_limited": counts["rate_limited"],
+            "internal_error": counts["internal_error"],
+        }
