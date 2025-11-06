@@ -19,3 +19,10 @@ def test_validate_not_youtube() -> None:
 def test_invalid_id() -> None:
     with pytest.raises(UserInputError):
         extract_video_id("https://youtu.be/too_short")
+
+
+def test_invalid_id_for_shorts_and_live() -> None:
+    with pytest.raises(UserInputError):
+        extract_video_id("https://www.youtube.com/shorts/too_short")
+    with pytest.raises(UserInputError):
+        extract_video_id("https://www.youtube.com/live/too_short")
