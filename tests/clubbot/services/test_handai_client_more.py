@@ -111,3 +111,11 @@ async def test_invalid_response_body_non_dict_raises() -> None:
             request_id="r",
         )
     assert "Invalid response body" in str(ei.value)
+
+
+def test_shape_api_error_json_list_defaults() -> None:
+    from src.clubbot.services.handai.client import _shape_api_error
+
+    resp = httpx.Response(503, json=[1, 2, 3], headers={"X-Request-ID": "rid2"})
+    err = _shape_api_error(resp)
+    assert err.status == 503 and err.request_id == "rid2" and "HTTP 503" in str(err)
