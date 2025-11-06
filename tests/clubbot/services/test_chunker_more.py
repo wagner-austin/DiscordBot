@@ -157,3 +157,41 @@ def test_probe_stream_info_non_dict_streams_skip(
     monkeypatch.setattr(_sp, "run", lambda *a, **k: _PR(body))
     container, codec = c._probe_stream_info(audio)
     assert container == "mp4" and codec == "aac"
+
+
+def test_probe_stream_info_streams_not_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    c = AudioChunker()
+    audio = _make_tmp_audio(tmp_path)
+
+    class _PR:
+        def __init__(self, s: str) -> None:
+            self.stdout = s
+            self.stderr = ""
+
+    import json as _json
+    import subprocess as _sp
+
+    body = _json.dumps({"format": {"format_name": "mp4"}, "streams": {"k": "v"}})
+    monkeypatch.setattr(_sp, "run", lambda *a, **k: _PR(body))
+    container, codec = c._probe_stream_info(audio)
+    assert container == "mp4" and codec == ""
+
+
+def test_probe_stream_info_streams_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    c = AudioChunker()
+    audio = _make_tmp_audio(tmp_path)
+
+    class _PR:
+        def __init__(self, s: str) -> None:
+            self.stdout = s
+            self.stderr = ""
+
+    import json as _json
+    import subprocess as _sp
+
+    body = _json.dumps({"format": {"format_name": "mp4"}, "streams": []})
+    monkeypatch.setattr(_sp, "run", lambda *a, **k: _PR(body))
+    container, codec = c._probe_stream_info(audio)
+    assert container == "mp4" and codec == ""
