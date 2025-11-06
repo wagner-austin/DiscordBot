@@ -126,6 +126,15 @@ async def test_notify_handles_discord_errors(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
+async def test_handle_event_unknown_type_noop() -> None:
+    bot = _Bot()
+    sub = dn.DigitsEventSubscriber(bot, redis_url="redis://fake")
+    # Unknown type should result in no notification and no exception
+    await sub._handle_event({"type": "digits.train.other.v1", "user_id": 1, "request_id": "r"})
+    assert bot.user.messages == []
+
+
+@pytest.mark.asyncio
 async def test_start_and_stop_covers_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     # Patch _run to a cooperative noop to avoid real Redis calls
     async def _noop(self) -> None:  # pragma: no cover - trivial
