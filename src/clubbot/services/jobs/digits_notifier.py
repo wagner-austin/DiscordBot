@@ -152,6 +152,28 @@ class DigitsEventSubscriber:
                 dots_prob=(float(_dp) if isinstance(_dp, int | float) else None),
             )
             return
+        if event["type"] == "digits.train.batch.v1":
+            await self._on_batch(
+                user_id=event["user_id"],
+                request_id=event["request_id"],
+                epoch=event["epoch"],
+                total_epochs=event["total_epochs"],
+                batch=event["batch"],
+                total_batches=event["total_batches"],
+                batch_loss=event["batch_loss"],
+                batch_acc=event["batch_acc"],
+                avg_loss=event["avg_loss"],
+                samples_per_sec=event["samples_per_sec"],
+                main_rss_mb=event["main_rss_mb"],
+                workers_rss_mb=event["workers_rss_mb"],
+                worker_count=event["worker_count"],
+                cgroup_usage_mb=event["cgroup_usage_mb"],
+                cgroup_limit_mb=event["cgroup_limit_mb"],
+                cgroup_pct=event["cgroup_pct"],
+                anon_mb=event["anon_mb"],
+                file_mb=event["file_mb"],
+            )
+            return
         if event["type"] == "digits.train.epoch.v1":
             await self._on_progress(
                 user_id=event["user_id"],
@@ -161,6 +183,37 @@ class DigitsEventSubscriber:
                 val_acc=event.get("val_acc"),
                 train_loss=event.get("train_loss"),
                 time_s=event.get("time_s"),
+            )
+            return
+        if event["type"] == "digits.train.best.v1":
+            await self._on_best(
+                user_id=event["user_id"],
+                request_id=event["request_id"],
+                epoch=event["epoch"],
+                val_acc=event["val_acc"],
+            )
+            return
+        if event["type"] == "digits.train.artifact.v1":
+            await self._on_artifact(
+                user_id=event["user_id"],
+                request_id=event["request_id"],
+                path=event["path"],
+            )
+            return
+        if event["type"] == "digits.train.upload.v1":
+            await self._on_upload(
+                user_id=event["user_id"],
+                request_id=event["request_id"],
+                status=event["status"],
+                model_bytes=event["model_bytes"],
+                manifest_bytes=event["manifest_bytes"],
+            )
+            return
+        if event["type"] == "digits.train.prune.v1":
+            await self._on_prune(
+                user_id=event["user_id"],
+                request_id=event["request_id"],
+                deleted_count=event["deleted_count"],
             )
             return
         if event["type"] == "digits.train.completed.v1":
@@ -289,6 +342,109 @@ class DigitsEventSubscriber:
         embed.set_footer(text=f"Request ID: {request_id}")
         await self._notify(user_id, request_id, embed)
 
+    async def _on_batch(
+        self,
+        *,
+        user_id: int,
+        request_id: str,
+        epoch: int,
+        total_epochs: int,
+        batch: int,
+        total_batches: int,
+        batch_loss: float,
+        batch_acc: float,
+        avg_loss: float,
+        samples_per_sec: float,
+        main_rss_mb: int,
+        workers_rss_mb: int,
+        worker_count: int,
+        cgroup_usage_mb: int,
+        cgroup_limit_mb: int,
+        cgroup_pct: float,
+        anon_mb: int,
+        file_mb: int,
+    ) -> None:
+        # Calculate progress percentages
+        epoch_pct = ((epoch - 1) / max(1, total_epochs)) * 100
+        batch_pct = (batch / max(1, total_batches)) * 100
+
+        # Epoch progress bar (20 slots)
+        epoch_filled = max(0, min(20, int(((epoch - 1) / max(1, total_epochs)) * 20)))
+        epoch_bar = "█" * epoch_filled + "░" * (20 - epoch_filled)
+
+        # Batch progress bar (20 slots)
+        batch_filled = max(0, min(20, int((batch / max(1, total_batches)) * 20)))
+        batch_bar = "█" * batch_filled + "░" * (20 - batch_filled)
+
+        embed = discord.Embed(
+            title="⚡ Training In Progress",
+            description=(
+                f"**Epoch {epoch}/{total_epochs}** ({epoch_pct:.0f}%)\n`{epoch_bar}`\n\n"
+                f"**Batch {batch}/{total_batches}** ({batch_pct:.0f}%)\n`{batch_bar}`"
+            ),
+            color=0x5865F2,  # Blurple
+        )
+
+        # Current batch metrics
+        batch_metrics = [
+            f"**Batch Loss:** `{batch_loss:.4f}`",
+            f"**Batch Accuracy:** `{batch_acc:.2%}`",
+        ]
+        embed.add_field(name="📊 Current Batch", value="\n".join(batch_metrics), inline=True)
+
+        # Overall metrics
+        overall_metrics = [
+            f"**Average Loss:** `{avg_loss:.4f}`",
+            f"**Speed:** `{samples_per_sec:.1f} samples/sec`",
+        ]
+        embed.add_field(name="📈 Overall", value="\n".join(overall_metrics), inline=True)
+
+        # Memory metrics
+        total_process_mb = main_rss_mb + workers_rss_mb
+        memory_metrics = [
+            f"**Memory:** `{cgroup_pct:.1f}%` ({cgroup_usage_mb}/{cgroup_limit_mb} MB)",
+            (
+                f"**Process:** `{total_process_mb} MB` "
+                f"(main: {main_rss_mb}, workers: {workers_rss_mb})"
+            ),
+        ]
+        embed.add_field(name="💾 Memory", value="\n".join(memory_metrics), inline=False)
+
+        embed.set_footer(text=f"Request ID: {request_id}")
+        await self._notify(user_id, request_id, embed)
+
+    async def _on_best(self, *, user_id: int, request_id: str, epoch: int, val_acc: float) -> None:
+        # This is a lightweight notification that a new best model was found
+        # We don't need to send a full message, just log it
+        # The next epoch/batch update will show the improved accuracy
+        pass
+
+    async def _on_artifact(self, *, user_id: int, request_id: str, path: str) -> None:
+        # Lightweight notification that artifact was created locally
+        # No need to update the message for this internal step
+        _ = (user_id, request_id, path)
+        pass
+
+    async def _on_upload(
+        self,
+        *,
+        user_id: int,
+        request_id: str,
+        status: int,
+        model_bytes: int,
+        manifest_bytes: int,
+    ) -> None:
+        # Lightweight notification about upload status
+        # Could optionally update message if status != 200
+        _ = (user_id, request_id, status, model_bytes, manifest_bytes)
+        pass
+
+    async def _on_prune(self, *, user_id: int, request_id: str, deleted_count: int) -> None:
+        # Lightweight notification about cleanup
+        # No need to update the message for this internal step
+        _ = (user_id, request_id, deleted_count)
+        pass
+
     async def _on_completed(
         self, *, user_id: int, request_id: str, model_id: str, run_id: str, val_acc: float
     ) -> None:
@@ -319,10 +475,10 @@ class DigitsEventSubscriber:
             color=0xED4245,  # Red
         )
 
-        # Error details
+        # Error details - show specific error message for both user and system errors
         if error_kind == "user":
             embed.add_field(
-                name="⚠️ Issue",
+                name="⚠️ Configuration Issue",
                 value=f"```{message}```",
                 inline=False,
             )
@@ -332,14 +488,34 @@ class DigitsEventSubscriber:
                 inline=False,
             )
         else:
+            # System error: show the specific error message (e.g., OOM, memory pressure, etc.)
             embed.add_field(
                 name="⚠️ System Error",
-                value="An unexpected error occurred during training.",
+                value=f"```{message}```",
                 inline=False,
             )
+            # Provide context-aware guidance based on error type
+            if "memory" in message.lower() or "oom" in message.lower():
+                next_steps = (
+                    "**Memory Issue Detected:**\n"
+                    "• Reduce batch size in your training config\n"
+                    "• Reduce DataLoader workers\n"
+                    "• Try training with fewer epochs to conserve resources"
+                )
+            elif "upload" in message.lower() or "artifact" in message.lower():
+                next_steps = (
+                    "**Artifact Upload Failed:**\n"
+                    "The model trained successfully but couldn't be saved. "
+                    "Check worker logs and try again."
+                )
+            else:
+                next_steps = (
+                    "Please try again. If the issue persists, "
+                    "check worker logs or contact support."
+                )
             embed.add_field(
                 name="💡 Next Steps",
-                value="Please try again later. If the issue persists, contact support.",
+                value=next_steps,
                 inline=False,
             )
 
