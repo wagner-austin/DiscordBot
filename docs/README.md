@@ -1,6 +1,6 @@
 ﻿# Discord Club Bot LVP
 
-Least-viable product: a modular Python bot that provides a `/qrcode` slash command returning a PNG. Built with Poetry and discord.py (app commands).
+Least-viable product: Modular Python bot that provides a `/qrcode` slash command returning a PNG. Built with Poetry and discord.py (app commands).
 
 ## Features
 - `/qrcode url:<https://...>`
