@@ -17,6 +17,7 @@ def test_digits_events_encode_decode_roundtrip() -> None:
         "run_id": None,
         "ts": "2025-01-01T00:00:00+00:00",
         "total_epochs": 10,
+        "queue": "digits",
         # Optional extras should round-trip when present
         "cpu_cores": 2,
         "optimal_threads": 2,
@@ -73,6 +74,8 @@ def test_digits_events_encode_decode_roundtrip() -> None:
         "ts": "2025-01-01T00:00:00+00:00",
         "error_kind": "system",
         "message": "boom",
+        "queue": "digits",
+        "status": "failed",
     }
     s4 = encode_event(failed)
     evt4 = try_decode_event(s4)
@@ -91,6 +94,7 @@ def test_digits_events_decode_started_without_extras() -> None:
             "run_id": None,
             "ts": "t",
             "total_epochs": 5,
+            "queue": "digits",
         }
     )
     evt = try_decode_event(payload)
@@ -159,6 +163,8 @@ def test_digits_events_decode_failed_invalid_types() -> None:
         "ts": "t",
         "error_kind": "oops",  # invalid kind
         "message": "msg",
+        "queue": "digits",
+        "status": "failed",
     }
     assert try_decode_event(encode_event(bad)) is None
 
