@@ -14,6 +14,7 @@ class StartedV1(TypedDict):
     run_id: str | None
     ts: str
     total_epochs: int
+    queue: str
     # Optional rich context (if provided by producer)
     cpu_cores: NotRequired[int]
     optimal_threads: NotRequired[int]
@@ -22,6 +23,7 @@ class StartedV1(TypedDict):
     max_batch_size: NotRequired[int]
     device: NotRequired[str]
     batch_size: NotRequired[int]
+    learning_rate: NotRequired[float]
     augment: NotRequired[bool]
     aug_rotate: NotRequired[float]
     aug_translate: NotRequired[float]
@@ -131,6 +133,8 @@ class FailedV1(TypedDict):
     ts: str
     error_kind: Literal["user", "system"]
     message: str
+    queue: str
+    status: Literal["failed", "canceled"]
 
 
 EventV1 = (
@@ -200,6 +204,9 @@ def _attach_optional_augment(out_st: StartedV1, src: dict[str, object]) -> None:
     bs = src.get("batch_size")
     if isinstance(bs, int):
         out_st["batch_size"] = bs
+    lr = src.get("learning_rate")
+    if isinstance(lr, int | float):
+        out_st["learning_rate"] = float(lr)
     aug = src.get("augment")
     if isinstance(aug, bool):
         out_st["augment"] = aug
@@ -224,6 +231,7 @@ def _decode_started(obj: dict[str, object]) -> StartedV1 | None:
     tot = obj.get("total_epochs")
     ts = obj.get("ts")
     run = obj.get("run_id")
+    queue = obj.get("queue")
     if (
         isinstance(req, str)
         and isinstance(uid, int)
@@ -231,6 +239,7 @@ def _decode_started(obj: dict[str, object]) -> StartedV1 | None:
         and isinstance(tot, int)
         and isinstance(ts, str)
         and (run is None or isinstance(run, str))
+        and isinstance(queue, str)
     ):
         out_st: StartedV1 = {
             "type": "digits.train.started.v1",
@@ -240,6 +249,7 @@ def _decode_started(obj: dict[str, object]) -> StartedV1 | None:
             "run_id": run if isinstance(run, str) else None,
             "ts": ts,
             "total_epochs": tot,
+            "queue": queue,
         }
         _attach_optional_context(out_st, obj)
         _attach_optional_augment(out_st, obj)
@@ -482,6 +492,8 @@ def _decode_failed(obj: dict[str, object]) -> FailedV1 | None:
     req, uid, mid = obj.get("request_id"), obj.get("user_id"), obj.get("model_id")
     kind, msg, ts = obj.get("error_kind"), obj.get("message"), obj.get("ts")
     run = obj.get("run_id")
+    queue = obj.get("queue")
+    status = obj.get("status")
     if (
         isinstance(req, str)
         and isinstance(uid, int)
@@ -490,8 +502,11 @@ def _decode_failed(obj: dict[str, object]) -> FailedV1 | None:
         and isinstance(msg, str)
         and isinstance(ts, str)
         and (run is None or isinstance(run, str))
+        and isinstance(queue, str)
+        and (status in ("failed", "canceled"))
     ):
         error_kind: Literal["user", "system"] = "user" if kind == "user" else "system"
+        job_status: Literal["failed", "canceled"] = "failed" if status == "failed" else "canceled"
         out_f: FailedV1 = {
             "type": "digits.train.failed.v1",
             "request_id": req,
@@ -501,6 +516,8 @@ def _decode_failed(obj: dict[str, object]) -> FailedV1 | None:
             "ts": ts,
             "error_kind": error_kind,
             "message": msg,
+            "queue": queue,
+            "status": job_status,
         }
         return out_f
     return None
