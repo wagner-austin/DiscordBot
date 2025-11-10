@@ -89,7 +89,7 @@ def make_fake_queue() -> tuple[_FakeQueue, object]:
 class _FakeRedis:
     @staticmethod
     def from_url(url: str, decode_responses: bool = False):
-        assert decode_responses is True
+        assert decode_responses is False  # RQ requires binary mode
         assert url == "redis://fake"
         return object()
 

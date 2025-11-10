@@ -51,7 +51,7 @@ def test_rq_enqueuer_builds_job_with_expected_args(monkeypatch: pytest.MonkeyPat
     class _FakeRedis:
         @staticmethod
         def from_url(url: str, decode_responses: bool = False) -> object:
-            assert decode_responses is True
+            assert decode_responses is False  # RQ requires binary mode
             assert url == "redis://fake"
             return object()
 
