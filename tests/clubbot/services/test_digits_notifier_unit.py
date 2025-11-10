@@ -50,6 +50,7 @@ async def test_handle_event_branches_send_dm() -> None:
             "run_id": None,
             "ts": "t",
             "total_epochs": 2,
+            "queue": "digits",
             # Optional extras for richer embed
             "cpu_cores": 2,
             "optimal_threads": 2,
@@ -71,6 +72,7 @@ async def test_handle_event_branches_send_dm() -> None:
             "run_id": None,
             "ts": "t",
             "total_epochs": 1,
+            "queue": "digits",
         }
     )
     assert bot.user.embeds and len(bot.user.embeds) >= 2
@@ -115,6 +117,8 @@ async def test_handle_event_branches_send_dm() -> None:
             "ts": "t",
             "error_kind": "user",
             "message": "bad payload",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert bot.user.embeds and len(bot.user.embeds) >= 4
@@ -129,6 +133,8 @@ async def test_handle_event_branches_send_dm() -> None:
             "ts": "t",
             "error_kind": "system",
             "message": "boom",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert bot.user.embeds and len(bot.user.embeds) >= 5
@@ -147,6 +153,7 @@ async def test_started_embed_includes_augment_and_config() -> None:
             "run_id": None,
             "ts": "t",
             "total_epochs": 3,
+            "queue": "digits",
             "cpu_cores": 2,
             "optimal_threads": 2,
             "memory_mb": 953,
@@ -177,6 +184,7 @@ async def test_started_augment_zero_values_renders_none() -> None:
             "run_id": None,
             "ts": "t",
             "total_epochs": 1,
+            "queue": "digits",
             "augment": True,
             "aug_rotate": 0.0,
             "aug_translate": 0.0,
@@ -218,6 +226,27 @@ async def test_notify_handles_discord_errors(monkeypatch: pytest.MonkeyPatch) ->
                 reason = "Not Found"
 
             raise discord.NotFound(response=_Resp(), message="not found")
+
+    class _BadBot:
+        async def fetch_user(self, user_id: int) -> _BadUser:  # pragma: no cover - trivial
+            _ = user_id
+            return _BadUser()
+
+    sub = dn.DigitsEventSubscriber(_BadBot(), redis_url="redis://fake")
+    # Should swallow the exception
+    await sub._on_completed(user_id=1, request_id="r", model_id="m", run_id="rid", val_acc=0.9)
+
+
+@pytest.mark.asyncio
+async def test_notify_handles_http_exception() -> None:
+    """Test that HTTPException is caught and logged."""
+
+    class _BadUser:
+        async def send(self, **kw: object) -> object:  # pragma: no cover - trivial
+            _ = kw
+            raise discord.HTTPException(
+                response=SimpleNamespace(status=500), message="Server error"
+            )
 
     class _BadBot:
         async def fetch_user(self, user_id: int) -> _BadUser:  # pragma: no cover - trivial
