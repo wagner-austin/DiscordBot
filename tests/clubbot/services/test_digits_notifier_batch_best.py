@@ -233,6 +233,7 @@ async def test_on_batch_epoch_progress_calculation() -> None:
     await sub._on_batch(
         user_id=6,
         request_id="r_calc",
+        model_id="mnist",
         epoch=2,
         total_epochs=5,
         batch=50,
@@ -264,6 +265,7 @@ async def test_on_batch_edge_case_single_epoch() -> None:
     await sub._on_batch(
         user_id=7,
         request_id="r_single",
+        model_id="mnist",
         epoch=1,
         total_epochs=1,
         batch=1,
