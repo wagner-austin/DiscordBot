@@ -14,7 +14,8 @@ else:  # pragma: no cover - runtime import only
     def _redis_from_url(url: str):
         import redis
 
-        return redis.from_url(url, decode_responses=True)
+        # RQ stores binary (pickled) payloads; decode_responses must be False
+        return redis.from_url(url, decode_responses=False)
 
 
 class TranscriptEnqueuer(Protocol):
