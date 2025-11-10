@@ -52,6 +52,8 @@ async def test_failed_system_error_memory_pressure_message() -> None:
                 "Training aborted due to sustained memory pressure (>= 85.0%). "
                 "Reduce batch size or DataLoader workers and retry."
             ),
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
@@ -76,6 +78,8 @@ async def test_failed_system_error_oom_kill_message() -> None:
                 "OOM kill detected (signal 9 / SIGKILL) - "
                 "worker terminated by system due to memory exhaustion"
             ),
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
@@ -96,6 +100,8 @@ async def test_failed_system_error_artifact_upload_message() -> None:
             "ts": "2025-01-01T00:00:00Z",
             "error_kind": "system",
             "message": "Artifact upload failed: upstream API error. See worker logs for details.",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
@@ -116,6 +122,8 @@ async def test_failed_system_error_generic_fallback() -> None:
             "ts": "2025-01-01T00:00:00Z",
             "error_kind": "system",
             "message": "RuntimeError: Something unexpected happened during training",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
@@ -136,6 +144,8 @@ async def test_failed_user_error_shows_config_issue() -> None:
             "ts": "2025-01-01T00:00:00Z",
             "error_kind": "user",
             "message": "invalid job type",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
@@ -156,6 +166,8 @@ async def test_failed_memory_uppercase_detection() -> None:
             "ts": "t",
             "error_kind": "system",
             "message": "MEMORY allocation failed",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
@@ -176,6 +188,8 @@ async def test_failed_upload_case_insensitive_detection() -> None:
             "ts": "t",
             "error_kind": "system",
             "message": "Upload to S3 failed: timeout",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
@@ -196,6 +210,8 @@ async def test_failed_message_with_run_id() -> None:
             "ts": "2025-01-01T12:00:00Z",
             "error_kind": "system",
             "message": "Training failed after epoch 5",
+            "queue": "digits",
+            "status": "failed",
         }
     )
     assert len(bot.user.embeds) == 1
