@@ -14,6 +14,7 @@ def test_decode_started_includes_augment_and_batch() -> None:
         "run_id": None,
         "ts": "t",
         "total_epochs": 2,
+        "queue": "digits",
         # Optional rich context
         "cpu_cores": 2,
         "optimal_threads": 2,
@@ -50,6 +51,7 @@ def test_decode_started_omits_unknown_optionals() -> None:
         "run_id": None,
         "ts": "t",
         "total_epochs": 1,
+        "queue": "digits",
     }
     ev = try_decode_event(json.dumps(payload))
     assert ev is not None
@@ -69,3 +71,22 @@ def test_decode_started_omits_unknown_optionals() -> None:
         "max_batch_size",
     ):
         assert k not in ev
+
+
+def test_decode_started_learning_rate_as_int() -> None:
+    """Test that learning_rate as int is converted to float."""
+    payload = {
+        "type": "digits.train.started.v1",
+        "request_id": "r",
+        "user_id": 1,
+        "model_id": "m",
+        "run_id": None,
+        "ts": "t",
+        "total_epochs": 1,
+        "queue": "digits",
+        "learning_rate": 1,  # int instead of float
+    }
+    ev = try_decode_event(json.dumps(payload))
+    assert ev is not None
+    assert ev.get("learning_rate") == 1.0  # Should be converted to float
+    assert isinstance(ev.get("learning_rate"), float)
