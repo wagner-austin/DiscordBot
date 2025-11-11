@@ -41,4 +41,3 @@ def test_client_error_message_fallback_when_json_not_dict() -> None:
         await client.aclose()
 
     asyncio.get_event_loop().run_until_complete(_run())
-
