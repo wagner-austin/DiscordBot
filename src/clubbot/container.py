@@ -57,6 +57,7 @@ class ServiceContainer:
         from .cogs.digits import DigitsCog
         from .cogs.invite import InviteCog
         from .cogs.qr import QRCog
+        from .cogs.trainer import TrainerCog
         from .cogs.transcript import TranscriptCog
 
         logger = logging.getLogger(__name__)
@@ -96,3 +97,7 @@ class ServiceContainer:
                     enqueuer = None
             await bot.add_cog(DigitsCog(bot, self.cfg, self.digits_service, enqueuer=enqueuer))
             logger.info("Loaded cog: DigitsCog")
+        # Trainer cog is always available when configured; it calls HTTP API directly
+        if (self.cfg.MODEL_TRAINER_API_URL or "").strip() and bot.get_cog("TrainerCog") is None:
+            await bot.add_cog(TrainerCog(bot, self.cfg))
+            logger.info("Loaded cog: TrainerCog")
