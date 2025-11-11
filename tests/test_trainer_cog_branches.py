@@ -21,9 +21,7 @@ class _Resp:
 
     async def defer(self, *, ephemeral: bool) -> None:
         if self._raise == "notfound":
-            raise discord.NotFound(
-                SimpleNamespace(status=404, reason="Not Found"), message="gone"
-            )
+            raise discord.NotFound(SimpleNamespace(status=404, reason="Not Found"), message="gone")
         if self._raise == "http_other":
             raise discord.HTTPException(
                 SimpleNamespace(status=400, reason="Bad Request"), message="boom"
