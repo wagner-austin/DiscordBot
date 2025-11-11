@@ -41,4 +41,3 @@ def test_client_train_invalid_json_body_raises() -> None:
         await client.aclose()
 
     asyncio.get_event_loop().run_until_complete(_run())
-
