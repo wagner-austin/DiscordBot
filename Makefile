@@ -33,7 +33,7 @@ run:
 serve: run
 
 test: install-dev
-	poetry run pytest --cov=src --cov-report=term-missing
+	poetry run pytest -v --cov=src --cov-report=term-missing
 
 tests: test
 
