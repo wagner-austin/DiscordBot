@@ -78,6 +78,11 @@ class Config:
     DIGITS_RATE_LIMIT: int = 2
     DIGITS_RATE_WINDOW_SECONDS: int = 60
     DIGITS_MAX_IMAGE_MB: int = 2
+    # Model Trainer service
+    MODEL_TRAINER_API_URL: str | None = None
+    MODEL_TRAINER_API_KEY: str | None = None
+    MODEL_TRAINER_API_TIMEOUT_SECONDS: int = 10
+    MODEL_TRAINER_API_MAX_RETRIES: int = 1
 
 
 def _parse_guilds() -> tuple[str | None, list[int]]:
@@ -433,6 +438,27 @@ def load_config() -> Config:
             file_overrides,
             "DIGITS_MAX_IMAGE_MB",
             _i("DIGITS_MAX_IMAGE_MB", 2),
+        ),
+        # Model Trainer service
+        MODEL_TRAINER_API_URL=(
+            (str(file_overrides.get("MODEL_TRAINER_API_URL") or "").strip())
+            or (os.getenv("MODEL_TRAINER_API_URL") or "").strip()
+            or None
+        ),
+        MODEL_TRAINER_API_KEY=(
+            (str(file_overrides.get("MODEL_TRAINER_API_KEY") or "").strip())
+            or (os.getenv("MODEL_TRAINER_API_KEY") or "").strip()
+            or None
+        ),
+        MODEL_TRAINER_API_TIMEOUT_SECONDS=_from_overrides_int(
+            file_overrides,
+            "MODEL_TRAINER_API_TIMEOUT_SECONDS",
+            _i("MODEL_TRAINER_API_TIMEOUT_SECONDS", 10),
+        ),
+        MODEL_TRAINER_API_MAX_RETRIES=_from_overrides_int(
+            file_overrides,
+            "MODEL_TRAINER_API_MAX_RETRIES",
+            _i("MODEL_TRAINER_API_MAX_RETRIES", 1),
         ),
     )
 
