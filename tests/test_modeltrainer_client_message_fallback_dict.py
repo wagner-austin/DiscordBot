@@ -42,4 +42,3 @@ def test_client_error_message_fallback_when_dict_has_empty_message() -> None:
         await client.aclose()
 
     asyncio.get_event_loop().run_until_complete(_run())
-
